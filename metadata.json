@@ -1,0 +1,8 @@
+{
+  "name": "Veri",
+  "description": "AI + GIS Powered Sustainability Traceability Platform for EUDR Compliance.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
