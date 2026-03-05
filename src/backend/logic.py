@@ -1,9 +1,9 @@
-import firebase_admin
-from firebase_admin import credentials, firestore
+import sqlite3
+import os
+import json
 from fpdf import FPDF
 import datetime
 import qrcode
-import os
 import pytesseract
 from PIL import Image
 import io
@@ -25,14 +25,124 @@ for tesseract_path in [
         pytesseract.pytesseract.tesseract_cmd = tesseract_path
         break
 
-# --- 1. 初始化 Firebase ---
-if not firebase_admin._apps:
-    backend_dir = os.path.dirname(__file__)
-    cred_path = os.path.join(backend_dir, "serviceAccountKey.json")
-    cred = credentials.Certificate(cred_path)
-    firebase_admin.initialize_app(cred)
+# --- SQLite Database Initialization ---
+DB_PATH = os.path.join(os.path.dirname(__file__), 'veri_demo.db')
 
-db = firestore.client()
+def get_db_connection():
+    """Get a database connection with row factory"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_database():
+    """Initialize SQLite database tables"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Farmers table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS farmers (
+            id_number TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            permits TEXT,
+            other_permit_name TEXT,
+            permit_photo_url TEXT,
+            plots TEXT,
+            monthly_quota REAL,
+            current_total_sold REAL DEFAULT 0,
+            is_eudr_safe INTEGER DEFAULT 1,
+            created_at TEXT
+        )
+    ''')
+    
+    # Dealers table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS dealers (
+            license_id TEXT PRIMARY KEY,
+            representative_name TEXT NOT NULL,
+            mobile TEXT,
+            station_name TEXT,
+            license_types TEXT,
+            license_numbers TEXT,
+            license_photos TEXT,
+            other_license_name TEXT,
+            location TEXT,
+            registered_at TEXT
+        )
+    ''')
+    
+    # Transactions table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS transactions (
+            id TEXT PRIMARY KEY,
+            farmer_id TEXT NOT NULL,
+            farmer_name TEXT,
+            weight REAL,
+            mode TEXT,
+            location TEXT,
+            timestamp TEXT,
+            ffb_batch_url TEXT,
+            farmer_signature_url TEXT,
+            status TEXT DEFAULT 'verified',
+            risk TEXT DEFAULT 'Safe',
+            crop_type TEXT DEFAULT 'Palm Oil',
+            FOREIGN KEY(farmer_id) REFERENCES farmers(id_number)
+        )
+    ''')
+    
+    # Audit requests table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS audit_requests (
+            transaction_id TEXT PRIMARY KEY,
+            status TEXT,
+            risk TEXT,
+            audit_requested_at TEXT,
+            audit_requested_by TEXT,
+            source TEXT
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+# Initialize database on import
+init_database()
+
+
+def get_user_profile(user_id: str):
+    """Retrieve user profile from database"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # First try to find in farmers
+        cursor.execute('SELECT id_number as id, name, "farmer" as role FROM farmers WHERE id_number = ?', (user_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            conn.close()
+            return {
+                "id": row[0],
+                "name": row[1],
+                "role": row[2]
+            }
+        
+        # Then try dealers
+        cursor.execute('SELECT license_id as id, representative_name as name, "dealer" as role FROM dealers WHERE license_id = ?', (user_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                "id": row[0],
+                "name": row[1],
+                "role": row[2]
+            }
+        
+        return None
+    except Exception as e:
+        print(f"Get User Profile Error: {e}")
+        return None
 
 
 def extract_ic_data(image_base64: str):
@@ -101,12 +211,10 @@ def extract_permit_data(image_base64: str, permit_type: str):
     except Exception as e:
         return {'error': str(e), 'permitType': permit_type, 'permitNumber': None, 'raw_text': ''}
 
-# --- OCR 帮助函数 ---
+
 def extract_land_title_data(image_base64: str):
     """
     使用 Tesseract OCR 从地契图像提取关键字段
-    支持图像格式 (PNG, JPG) 和 PDF
-    返回字典包含 lot_number, plot_alias, mukim, district, state, land_area, owner_name, raw_text
     """
     try:
         if ',' in image_base64:
@@ -118,22 +226,18 @@ def extract_land_title_data(image_base64: str):
         if image_data.startswith(b'%PDF'):
             if not PDF_SUPPORT:
                 return {'error': 'PDF support not available. Please install PyMuPDF: pip install PyMuPDF'}
-            # Convert PDF to image (first page only) using PyMuPDF
             try:
                 pdf_document = fitz.open(stream=image_data, filetype="pdf")
                 if pdf_document.page_count == 0:
                     return {'error': 'PDF has no pages'}
-                # Render first page as image
                 page = pdf_document[0]
-                pix = page.get_pixmap(dpi=300)  # High DPI for better OCR
-                # Convert pixmap to PIL Image
+                pix = page.get_pixmap(dpi=300)
                 img_data = pix.tobytes("png")
                 image = Image.open(io.BytesIO(img_data))
                 pdf_document.close()
             except Exception as e:
                 return {'error': f'PDF conversion failed: {str(e)}'}
         else:
-            # Regular image file
             try:
                 image = Image.open(io.BytesIO(image_data))
             except Exception as e:
@@ -150,10 +254,10 @@ def extract_land_title_data(image_base64: str):
             'owner_name': None,
             'raw_text': ocr_text
         }
-        # Extract Lot Number
+        
         lot_patterns = [
             r'(?:Lot|LOT|Lote|LOTE)\s*(?:No\.?|NUMBER)?\s*:?\s*([A-Z]?\d+/\d+)',
-            r'([A-Z]?\d{2,5}/\d{2,5})'  # OCR fallback when label is noisy
+            r'([A-Z]?\d{2,5}/\d{2,5})'
         ]
         for pattern in lot_patterns:
             match = re.search(pattern, ocr_text, re.IGNORECASE)
@@ -161,7 +265,6 @@ def extract_land_title_data(image_base64: str):
                 data['lot_number'] = match.group(1).strip()
                 break
         
-        # Extract Plot Alias/Name
         alias_patterns = [
             r'(?:Plot\s+(?:Alias|Name|Code)|Plot\s+ID)\s*:?\s*([A-Za-z0-9\-_]+)',
             r'(?:Alias|Plot\s+Name)\s*:?\s*([A-Za-z0-9\-_\s]+?)(?:\n|,|$)'
@@ -197,7 +300,6 @@ def extract_land_title_data(image_base64: str):
             data['center_lat'] = float(lat_match.group(1))
             data['center_lng'] = float(lng_match.group(1))
         else:
-            # Fallback centroids for demo when no explicit coordinates are present.
             data['center_lat'] = 3.1390
             data['center_lng'] = 101.6869
 
@@ -210,61 +312,78 @@ def calculate_quota(area: float, unit: str):
     actual_ha = area * 0.4047 if unit == 'Acre' else area
     return round(actual_ha * 1.5, 2)
 
-# --- 2. 农民注册 ---
+# --- Farmer Registration ---
 def process_farmer_registration(farmer_data: dict):
     try:
-        # 计算总面积和配额
-        total_area = sum(plot['landArea'] for plot in farmer_data.get('plots', []))
-        monthly_quota = round(total_area * 1.5, 2)  # 假设每HA 1.5 MT
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        doc_ref = db.collection('farmers').document(farmer_data['idNumber'])
-        doc_ref.set({
-            "name": farmer_data['name'],
-            "idNumber": farmer_data['idNumber'],
-            "permits": farmer_data['permits'],
-            "otherPermitName": farmer_data.get('otherPermitName'),
-            "permitPhotoUrl": farmer_data.get('permitPhotoUrl'),
-            "plots": farmer_data['plots'],
-            "monthly_quota": monthly_quota,
-            "current_total_sold": 0.0,
-            "is_eudr_safe": True
-        })
+        total_area = sum(plot['landArea'] for plot in farmer_data.get('plots', []))
+        monthly_quota = round(total_area * 1.5, 2)
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO farmers 
+            (id_number, name, permits, other_permit_name, permit_photo_url, plots, monthly_quota, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            farmer_data['idNumber'],
+            farmer_data['name'],
+            json.dumps(farmer_data['permits']),
+            farmer_data.get('otherPermitName'),
+            farmer_data.get('permitPhotoUrl'),
+            json.dumps(farmer_data['plots']),
+            monthly_quota,
+            datetime.datetime.now().isoformat()
+        ))
+        
+        conn.commit()
+        conn.close()
         return {"success": True, "quota": monthly_quota, "eudr_safe": True}
     except Exception as e:
-        print(f"Firebase Save Error: {e}")
+        print(f"SQLite Save Error: {e}")
         return {"success": False}
 
-# --- 2.6 添加地块到农民 ---
+# --- Add Plot to Farmer ---
 def add_plot_to_farmer(farmer_id: str, plot_data: dict):
     try:
-        doc_ref = db.collection('farmers').document(farmer_id)
-        doc = doc_ref.get()
-        if not doc.exists:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT plots FROM farmers WHERE id_number = ?', (farmer_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            conn.close()
             return {"success": False, "message": "Farmer not found"}
         
-        farmer_data = doc.to_dict()
-        plots = farmer_data.get('plots', [])
+        plots = json.loads(row['plots']) if row['plots'] else []
         plots.append(plot_data)
         
-        # 重新计算配额
         total_area = sum(p['landArea'] for p in plots)
         new_quota = round(total_area * 1.5, 2)
         
-        doc_ref.update({
-            "plots": plots,
-            "monthly_quota": new_quota
-        })
+        cursor.execute('''
+            UPDATE farmers 
+            SET plots = ?, monthly_quota = ?
+            WHERE id_number = ?
+        ''', (json.dumps(plots), new_quota, farmer_id))
+        
+        conn.commit()
+        conn.close()
         return {"success": True, "new_quota": new_quota}
     except Exception as e:
-        print(f"Firebase Save Error: {e}")
+        print(f"SQLite Save Error: {e}")
         return {"success": False}
+
+# --- Dealer Registration ---
 def process_dealer_registration(dealer_data: dict):
     try:
-        # 获取所有许可证号码，用第一个作为document ID
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
         license_numbers = dealer_data.get('licenseNumbers', {})
         license_types = dealer_data.get('licenseTypes', [])
         
-        # 选择主许可证ID（第一个许可证类型对应的号码）
         primary_license = ''
         if license_types and license_numbers:
             primary_license = license_numbers.get(license_types[0], '')
@@ -272,38 +391,53 @@ def process_dealer_registration(dealer_data: dict):
         if not primary_license:
             primary_license = f"DEALER-{int(datetime.datetime.now().timestamp())}"
         
-        doc_ref = db.collection('dealers').document(primary_license)
-        doc_ref.set({
-            "representativeName": dealer_data['representativeName'],
-            "mobile": dealer_data['mobile'],
-            "stationName": dealer_data['stationName'],
-            "licenseTypes": dealer_data['licenseTypes'],
-            "licenseNumbers": dealer_data.get('licenseNumbers', {}),  # 保存所有许可证号码
-            "licensePhotos": dealer_data.get('licensePhotos', {}),  # 保存所有许可证照片
-            "otherLicenseName": dealer_data.get('otherLicenseName'),
-            "location": dealer_data['location'],
-            "registered_at": datetime.datetime.now().isoformat()
-        })
+        cursor.execute('''
+            INSERT OR REPLACE INTO dealers 
+            (license_id, representative_name, mobile, station_name, license_types, license_numbers, license_photos, other_license_name, location, registered_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            primary_license,
+            dealer_data['representativeName'],
+            dealer_data.get('mobile'),
+            dealer_data.get('stationName'),
+            json.dumps(dealer_data.get('licenseTypes', [])),
+            json.dumps(dealer_data.get('licenseNumbers', {})),
+            json.dumps(dealer_data.get('licensePhotos', {})),
+            dealer_data.get('otherLicenseName'),
+            json.dumps(dealer_data.get('location', {})),
+            datetime.datetime.now().isoformat()
+        ))
+        
+        conn.commit()
+        conn.close()
         return {"success": True, "dealer_id": primary_license}
     except Exception as e:
-        print(f"Firebase Save Error: {e}")
+        print(f"SQLite Save Error: {e}")
         return {"success": False}
 
-# --- 3. 交易核验 + 实时更新数据库 ---
+# --- Check Security Filters ---
 def check_security_filters(tx_data: dict):
     try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
         farmer_id = tx_data['farmerId']
         new_weight = tx_data['weight']
 
-        doc_ref = db.collection('farmers').document(farmer_id)
-        doc = doc_ref.get()
+        cursor.execute('''
+            SELECT monthly_quota, current_total_sold, name, permits 
+            FROM farmers 
+            WHERE id_number = ?
+        ''', (farmer_id,))
         
-        if not doc.exists:
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
             return {"allowed": False, "reason": "INVALID_ID", "message": "Farmer not found"}
 
-        farmer_info = doc.to_dict()
-        quota = farmer_info['monthly_quota']
-        sold = farmer_info['current_total_sold']
+        quota = row['monthly_quota']
+        sold = row['current_total_sold']
 
         if (sold + new_weight) > quota:
             return {
@@ -312,42 +446,46 @@ def check_security_filters(tx_data: dict):
                 "message": f"Quota exceeded. Remaining: {round(quota-sold, 2)} MT"
             }
 
-        # --- 重点：核验通过，立刻更新 Firebase 里的已售重量 ---
+        # Update the sold amount
+        conn = get_db_connection()
+        cursor = conn.cursor()
         new_total_sold = sold + new_weight
-        doc_ref.update({"current_total_sold": new_total_sold})
+        cursor.execute('''
+            UPDATE farmers 
+            SET current_total_sold = ?
+            WHERE id_number = ?
+        ''', (new_total_sold, farmer_id))
+        conn.commit()
+        conn.close()
 
-        # 把完整的 farmer_info 也传回去，方便 main.py 调用 PDF 时拿到名字
+        permits = json.loads(row['permits']) if row['permits'] else []
+        
         return {
             "allowed": True, 
             "remaining": round(quota - new_total_sold, 2),
-            "farmer_name": farmer_info.get('name', 'Unknown'), # 传出姓名
-            "permit_info": farmer_info.get('permits', [])
+            "farmer_name": row['name'],
+            "permit_info": permits
         }
     except Exception as e:
         return {"allowed": False, "reason": "SYSTEM_ERROR", "message": str(e)}
 
-# --- 4. 生成带二维码的 PDF 报告 ---
+# --- Generate Compliance Report ---
 def generate_compliance_report(tx_data: dict, security_result: dict):
     pdf = FPDF()
     pdf.add_page()
     
     tx_id = tx_data.get('id', 'TEMP_ID_001')
     
-    # --- 1. 生成二维码 ---
     qr_data = f"TX_ID: {tx_id} | Verified by PalmOil-DDS"
     qr = qrcode.make(qr_data)
     qr.save("temp_qr.png")
 
-    # --- 2. 绘制 PDF 内容 ---
     pdf.set_font("Arial", 'B', 20)
     pdf.cell(200, 20, "EUDR COMPLIANCE REPORT", ln=True, align='C')
-    
-    # 插入二维码图片 (右上角)
     pdf.image("temp_qr.png", x=160, y=10, w=30)
     
     pdf.ln(10)
     pdf.set_font("Arial", '', 12)
-    # 这里使用从 security_result 传进来的姓名
     pdf.cell(200, 10, f"Farmer Name: {security_result.get('farmer_name', 'Unknown')}", ln=True)
     pdf.cell(200, 10, f"Farmer ID: {tx_data.get('farmerId')}", ln=True)
     permit_info = security_result.get('permit_info', [])
@@ -364,28 +502,21 @@ def generate_compliance_report(tx_data: dict, security_result: dict):
     
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 14)
-    pdf.set_text_color(0, 150, 0) # 绿色字体表示合格
+    pdf.set_text_color(0, 150, 0)
     pdf.cell(200, 10, "STATUS: PASSED - NO DEFORESTATION DETECTED", ln=True, align='C')
 
     file_name = f"report_{tx_id}.pdf"
     pdf.output(file_name)
     
-    # 清理临时二维码图片
     if os.path.exists("temp_qr.png"):
         os.remove("temp_qr.png")
         
     return file_name
 
-import qrcode
+# --- Generate Farmer QR ---
 from io import BytesIO
-import base64
 
 def generate_farmer_qr_logic(farmer_id: str):
-    """
-    [对应第二阶段 Step 3] 将 FarmerID 封装进 QR 码
-    返回 Base64 字符串，前端 <img> 标签可以直接使用
-    """
-    # 构造二维码内容，通常包含一个前缀防止乱扫
     qr_content = f"PALM_FARMER:{farmer_id}"
     
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
@@ -394,7 +525,6 @@ def generate_farmer_qr_logic(farmer_id: str):
 
     img = qr.make_image(fill_color="black", back_color="white")
     
-    # 将图片保存到内存中并转为 base64
     buffered = BytesIO()
     img.save(buffered, format="PNG")
     img_str = base64.b64encode(buffered.getvalue()).decode()
@@ -403,32 +533,39 @@ def generate_farmer_qr_logic(farmer_id: str):
 
 from shapely.geometry import Point, Polygon
 
-# --- [对应第三阶段 Dashboard] 获取农民实时状态 ---
+# --- Get Farmer Status ---
 def get_farmer_status_logic(farmer_id: str):
-    """
-    检查农民是否存在，并返回其本月剩余配额 
-    """
-    doc = db.collection('farmers').document(farmer_id).get()
-    if not doc.exists:
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT name, monthly_quota, current_total_sold, permits, plots, is_eudr_safe
+            FROM farmers
+            WHERE id_number = ?
+        ''', (farmer_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return None
+        
+        remaining = round(row['monthly_quota'] - row['current_total_sold'], 2)
+        
+        return {
+            "name": row['name'],
+            "remaining_quota": remaining,
+            "permits": json.loads(row['permits']) if row['permits'] else [],
+            "plots": json.loads(row['plots']) if row['plots'] else [],
+            "is_eudr_safe": bool(row['is_eudr_safe'])
+        }
+    except Exception as e:
+        print(f"Get Farmer Status Error: {e}")
         return None
-    
-    data = doc.to_dict()
-    remaining = round(data['monthly_quota'] - data['current_total_sold'], 2)
-    
-    return {
-        "name": data.get('name'),
-        "remaining_quota": remaining,
-        "permits": data.get('permits', []),
-        "plots": data.get('plots', []),
-        "is_eudr_safe": data.get('is_eudr_safe', True)
-    }
 
-# --- [对应第三阶段 Mode Toggle] 地理围栏核验 ---
+# --- Verify Spatial Compliance ---
 def verify_spatial_compliance(current_lat: float, current_lng: float, boundary_points: list):
-    """
-    使用 shapely 检查收购坐标是否在农民地块多边形内 
-    """
-    # ⚠️ 提醒：如果此处 boundary_points 为空，说明【第二阶段】的地块注册未完成
     if not boundary_points or len(boundary_points) < 3:
         return {"status": "NEED_STAGE_2", "message": "No boundary data! Please complete Stage 2: Add Plot first."}
 
@@ -439,14 +576,13 @@ def verify_spatial_compliance(current_lat: float, current_lng: float, boundary_p
     is_inside = fence.contains(current_point)
     return {"status": "SUCCESS" if is_inside else "OUT_OF_BOUNDS", "is_inside": is_inside}
 
-# --- 4.5 生成整合版 DDS 报告 ---
+# --- Generate Consolidated Report ---
 def generate_consolidated_report(manifest_data: dict):
     pdf = FPDF()
     pdf.add_page()
     
     manifest_id = manifest_data.get('id', 'MANIFEST_TEMP')
     
-    # 生成二维码
     qr_data = f"MANIFEST:{manifest_id} | Consolidated DDS"
     qr = qrcode.make(qr_data)
     qr.save("temp_manifest_qr.png")
@@ -465,15 +601,25 @@ def generate_consolidated_report(manifest_data: dict):
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(200, 10, "Farmers Involved:", ln=True)
     
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
     for tx_id in manifest_data['selectedTransactions']:
-        tx_doc = db.collection('transactions').document(tx_id).get()
-        if tx_doc.exists:
-            tx_data = tx_doc.to_dict()
+        cursor.execute('''
+            SELECT farmer_name, farmer_id, weight, location 
+            FROM transactions
+            WHERE id = ?
+        ''', (tx_id,))
+        
+        tx_row = cursor.fetchone()
+        if tx_row:
+            location = json.loads(tx_row['location']) if tx_row['location'] else {}
             pdf.set_font("Arial", '', 12)
-            pdf.cell(200, 10, f"- {tx_data['farmerName']} ({tx_data['farmerId']}): {tx_data['weight']} MT", ln=True)
-            pdf.cell(200, 10, f"  GPS: {tx_data['location']['lat']}, {tx_data['location']['lng']}", ln=True)
-            # 假设种植年份从农民数据获取，这里简化
-            pdf.cell(200, 10, f"  Planting Year: {2020}", ln=True)  # 需要从plots获取
+            pdf.cell(200, 10, f"- {tx_row['farmer_name']} ({tx_row['farmer_id']}): {tx_row['weight']} MT", ln=True)
+            pdf.cell(200, 10, f"  GPS: {location.get('lat', 'N/A')}, {location.get('lng', 'N/A')}", ln=True)
+            pdf.cell(200, 10, f"  Planting Year: {2020}", ln=True)
+    
+    conn.close()
     
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 14)
@@ -488,32 +634,36 @@ def generate_consolidated_report(manifest_data: dict):
         
     return file_name
 
-# --- 4.6 保存交易数据 ---
+# --- Save Transaction ---
 def save_transaction(tx_data: dict):
-    """
-    保存dealer端的transaction数据到Firebase
-    """
     try:
-        # 生成transaction ID（如果前端没有传）
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
         if not tx_data.get('id'):
             tx_data['id'] = f"TX-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
         
-        # 保存到transactions collection
-        doc_ref = db.collection('transactions').document(tx_data['id'])
-        doc_ref.set({
-            "id": tx_data['id'],
-            "farmerId": tx_data['farmerId'],
-            "farmerName": tx_data['farmerName'],
-            "weight": tx_data['weight'],
-            "mode": tx_data['mode'],  # 'Plantation' or 'Ramp'
-            "location": tx_data.get('location', {}),
-            "timestamp": datetime.datetime.now().isoformat(),
-            "ffbBatchUrl": tx_data.get('ffbBatchUrl'),
-            "farmerSignatureUrl": tx_data.get('farmerSignatureUrl'),
-            "status": tx_data.get('status', 'verified'),
-            "risk": tx_data.get('risk', 'Safe'),
-            "cropType": tx_data.get('cropType', 'Palm Oil')
-        })
+        cursor.execute('''
+            INSERT OR REPLACE INTO transactions 
+            (id, farmer_id, farmer_name, weight, mode, location, timestamp, ffb_batch_url, farmer_signature_url, status, risk, crop_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            tx_data['id'],
+            tx_data['farmerId'],
+            tx_data.get('farmerName'),
+            tx_data['weight'],
+            tx_data.get('mode'),
+            json.dumps(tx_data.get('location', {})),
+            datetime.datetime.now().isoformat(),
+            tx_data.get('ffbBatchUrl'),
+            tx_data.get('farmerSignatureUrl'),
+            tx_data.get('status', 'verified'),
+            tx_data.get('risk', 'Safe'),
+            tx_data.get('cropType', 'Palm Oil')
+        ))
+        
+        conn.commit()
+        conn.close()
         
         return {
             "success": True, 
@@ -524,28 +674,30 @@ def save_transaction(tx_data: dict):
         print(f"Transaction Save Error: {e}")
         return {"success": False, "error": str(e)}
 
-
+# --- Request Transaction Audit ---
 def request_transaction_audit(transaction_id: str, requested_by: str = "dealer"):
-    """Mark a transaction as pending audit. Supports mock-only rows via audit_requests."""
     try:
-        tx_ref = db.collection('transactions').document(transaction_id)
-        tx_doc = tx_ref.get()
-
-        audit_payload = {
-            "status": "PENDING_AUDIT",
-            "risk": "PENDING_AUDIT",
-            "auditRequestedAt": datetime.datetime.now().isoformat(),
-            "auditRequestedBy": requested_by,
-        }
-
-        if tx_doc.exists:
-            tx_ref.update(audit_payload)
-        else:
-            db.collection('audit_requests').document(transaction_id).set({
-                "transactionId": transaction_id,
-                "source": "mock_dashboard",
-                **audit_payload,
-            })
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        audit_time = datetime.datetime.now().isoformat()
+        
+        # Try to update transaction
+        cursor.execute('''
+            UPDATE transactions 
+            SET status = ?, risk = ?
+            WHERE id = ?
+        ''', ('PENDING_AUDIT', 'PENDING_AUDIT', transaction_id))
+        
+        # Also insert into audit_requests
+        cursor.execute('''
+            INSERT OR REPLACE INTO audit_requests 
+            (transaction_id, status, risk, audit_requested_at, audit_requested_by, source)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (transaction_id, 'PENDING_AUDIT', 'PENDING_AUDIT', audit_time, requested_by, 'mock_dashboard'))
+        
+        conn.commit()
+        conn.close()
 
         return {
             "success": True,
@@ -556,9 +708,8 @@ def request_transaction_audit(transaction_id: str, requested_by: str = "dealer")
         print(f"Audit Request Error: {e}")
         return {"success": False, "error": str(e)}
 
-
+# --- Sync Transactions ---
 def sync_transactions(sync_payload: dict):
-    """Batch sync offline transactions to Firebase."""
     try:
         transactions = sync_payload.get('transactions', [])
         if not isinstance(transactions, list):

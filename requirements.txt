@@ -1,9 +1,9 @@
 fastapi
 uvicorn
-firebase-admin
 pytesseract
 pillow
 python-multipart
+PyMuPDF
 fpdf
 qrcode
 shapely

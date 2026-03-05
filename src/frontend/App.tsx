@@ -373,6 +373,9 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
       return;
     }
 
+    // Clear any existing polygon points (manual or previous auto-detect)
+    setMapPoints([]);
+
     setScanningMessage('Extracting data from uploaded Land Title...');
     setIsScanning(true);
     
@@ -513,9 +516,10 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                 ? '✅ Name matches IC' 
                 : (ownerName ? '⚠️ Name may not match IC - verify carefully' : '⚠️ Could not extract owner name from document');
               
-              // Store extracted metadata without auto-filling title/area
+              // Store extracted metadata and auto-fill area
               setCurrentPlot(prev => ({
                 ...prev,
+                area: String(extractedData.land_area || ''),
                 landTitleMetadata: {
                   ...extractedData,
                   nameMatchValidation: validationMsg,
@@ -525,12 +529,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
               
               if (typeof extractedData.center_lat === 'number' && typeof extractedData.center_lng === 'number') {
                 setMapCenter({ lat: extractedData.center_lat, lng: extractedData.center_lng });
-                setMapPoints([
-                  { x: 30, y: 30 },
-                  { x: 70, y: 32 },
-                  { x: 66, y: 70 },
-                  { x: 34, y: 68 },
-                ]);
+                // Polygon will be drawn when user clicks Auto-Detect button
               }
               console.log('Land title validation:', validationMsg);
               console.log('Land title data extracted:', extractedData);
@@ -643,9 +642,10 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
           ? '✅ Name matches IC' 
           : (ownerName ? '⚠️ Name may not match IC - verify carefully' : '⚠️ Could not extract owner name from document');
         
-        // Store metadata for display only (no auto-fill of title/area)
+        // Store metadata and auto-fill area
         setCurrentPlot(prev => ({
           ...prev,
+          area: String(mockExtractedData.land_area || ''),
           landTitleMetadata: {
             ...mockExtractedData,
             nameMatchValidation: validationMsg,
@@ -655,12 +655,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
         
         if (mockExtractedData.center_lat && mockExtractedData.center_lng) {
           setMapCenter({ lat: mockExtractedData.center_lat, lng: mockExtractedData.center_lng });
-          setMapPoints([
-            { x: 30, y: 30 },
-            { x: 70, y: 32 },
-            { x: 66, y: 70 },
-            { x: 34, y: 68 },
-          ]);
+          // Polygon will be drawn when user clicks Auto-Detect button
         }
       } else {
         setFormData(prev => ({
@@ -1174,7 +1169,14 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                         <MapPin size={14} /> Auto-Detect
                       </button>
                       <button 
-                        onClick={(e) => { e.stopPropagation(); setIsDrawing(!isDrawing); }}
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          // Clear polygon points when starting manual draw
+                          if (!isDrawing) {
+                            setMapPoints([]);
+                          }
+                          setIsDrawing(!isDrawing); 
+                        }}
                         className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-lg flex items-center gap-2 transition-all ${isDrawing ? 'bg-gold-500 text-palm-950' : 'bg-palm-950 text-white'}`}
                       >
                         <PenTool size={14} /> {isDrawing ? 'Finish Drawing' : 'Draw Polygon'}
