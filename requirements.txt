@@ -1,7 +1,11 @@
-streamlit
-qrcode
+fastapi
+uvicorn
+firebase-admin
+pytesseract
 pillow
+python-multipart
 fpdf
+qrcode
 shapely
 folium
 pandas

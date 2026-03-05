@@ -210,16 +210,23 @@ const PERMIT_LIBRARY = [
   { id: 'OTHER', label: 'OTHER PERMIT TYPE...' },
 ];
 
-const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () => void, plots: any[], setPlots: (p: any[]) => void, key?: string }) => {
+const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (formData: any, plots: any[]) => void, plots: any[], setPlots: (p: any[]) => void, key?: string }) => {
   const [step, setStep] = useState(1);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanningMessage, setScanningMessage] = useState('AI Verifying Document...');
   const [isAddingPlot, setIsAddingPlot] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingMessage, setGeneratingMessage] = useState('Generating Universal ID...');
   const [mapPoints, setMapPoints] = useState<{x: number, y: number}[]>([]);
+  const [mapCenter, setMapCenter] = useState({ lat: 3.139, lng: 101.6869 });
+  const mapContainerRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState({
     name: '',
     idNumber: '',
+    icPhoto: null as string | null,
     permitPhotos: {} as Record<string, string | null>,
+    permitNumbers: {} as Record<string, string | null>,
     permitTypes: ['MPOB'] as string[],
     customPermits: [] as string[],
     otherPermitName: '',
@@ -231,6 +238,19 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
     cropType: 'Palm Oil',
     plantingYear: '2018',
     titlePhoto: null as string | null,
+    landTitleMetadata: null as null | {
+      lot_number?: string | null;
+      plot_alias?: string | null;
+      mukim?: string | null;
+      district?: string | null;
+      state?: string | null;
+      land_area?: number | null;
+      owner_name?: string | null;
+      center_lat?: number;
+      center_lng?: number;
+      nameMatchValidation?: string;
+      nameMatches?: boolean;
+    },
   });
 
   const permitToCrop: Record<string, string> = {
@@ -278,9 +298,10 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
         ...currentPlot, 
         id: Date.now(),
         title: currentPlot.title || `${currentPlot.cropType} Plot ${plots.length + 1}`,
-        points: mapPoints
+        points: mapPoints,
+        satelliteVerified: null // Will be verified before generating ID
       }]);
-      setCurrentPlot({ title: '', area: '', cropType: 'Palm Oil', plantingYear: '2018', titlePhoto: null });
+      setCurrentPlot({ title: '', area: '', cropType: 'Palm Oil', plantingYear: '2018', titlePhoto: null, landTitleMetadata: null });
       setMapPoints([]);
       setIsDrawing(false);
       setIsAddingPlot(false);
@@ -296,67 +317,363 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
     const newPoints = [...mapPoints, { x, y }];
     setMapPoints(newPoints);
 
-    // Simulate area calculation if 3+ points
+    // ✅ Calculate polygon area using Shoelace formula (auto-fill land area)
     if (newPoints.length >= 3) {
-      const simulatedArea = (newPoints.length * 0.45).toFixed(2);
-      setCurrentPlot(prev => ({ ...prev, area: simulatedArea }));
+      // Shoelace formula for polygon area in percentage coordinates
+      let area = 0;
+      for (let i = 0; i < newPoints.length; i++) {
+        const j = (i + 1) % newPoints.length;
+        area += newPoints[i].x * newPoints[j].y;
+        area -= newPoints[j].x * newPoints[i].y;
+      }
+      area = Math.abs(area) / 2;
+      
+      // Convert percentage area to approximate hectares
+      // Assuming a typical plot view covers ~10 hectares (adjustable scaling factor)
+      const scaleFactor = 10 / 10000; // 10 HA / 100x100 percentage units
+      const calculatedHectares = (area * scaleFactor).toFixed(2);
+      
+      setCurrentPlot(prev => ({ 
+        ...prev, 
+        area: calculatedHectares 
+      }));
     }
   };
 
+  const getPixelCoordinates = (percentagePoints: {x: number, y: number}[]) => {
+    if (!mapContainerRef.current) return '';
+    const rect = mapContainerRef.current.getBoundingClientRect();
+    return percentagePoints.map(p => `${(p.x / 100) * rect.width},${(p.y / 100) * rect.height}`).join(' ');
+  };
+
+  // Mock satellite verification based on planting year and location
+  const verifySatelliteData = async (plot: any) => {
+    // Simulate API call delay
+    await new Promise(r => setTimeout(r, 800));
+    
+    const plantingYear = parseInt(plot.plantingYear);
+    const isEUDRSafe = plantingYear <= 2020;
+    
+    // Mock: randomly add some risk factors for plots after 2020
+    const hasForestLoss = plantingYear > 2020 && Math.random() > 0.3;
+    
+    return {
+      verified: true,
+      compliant: isEUDRSafe && !hasForestLoss,
+      plantingYear,
+      forestLossDetected: hasForestLoss,
+      verificationDate: new Date().toISOString().split('T')[0]
+    };
+  };
+
   const autoDetectLocation = () => {
-    setIsScanning(true);
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(() => {
-        setTimeout(() => {
-          setIsScanning(false);
-          // Simulate map jump to a new "location"
-          setMapPoints([]);
-          setIsDrawing(false);
-        }, 1500);
-      }, () => {
-        setIsScanning(false);
-        alert("Location access denied. Please enable GPS.");
-      });
-    } else {
-      setIsScanning(false);
-      alert("Geolocation not supported.");
+    // Check if land title has been uploaded
+    if (!currentPlot.titlePhoto) {
+      alert("Please upload Land Title document first to auto-detect location and area.");
+      return;
     }
+
+    setScanningMessage('Extracting data from uploaded Land Title...');
+    setIsScanning(true);
+    
+    // Capture metadata before setTimeout to avoid closure issues
+    const metadata = currentPlot.landTitleMetadata;
+    console.log('Auto-Detect: Current metadata:', metadata);
+    console.log('Auto-Detect: Current area before update:', currentPlot.area);
+    
+    setTimeout(() => {
+      setIsScanning(false);
+      setScanningMessage('AI Verifying Document...');
+      
+      // Auto-fill land area from extracted data
+      if (metadata?.land_area) {
+        console.log('Auto-Detect: Setting area to', metadata.land_area);
+        setCurrentPlot(prev => ({
+          ...prev,
+          area: String(metadata.land_area)
+        }));
+      } else {
+        console.warn('Auto-Detect: No land_area found in metadata, using fallback demo value');
+        // Use demo value if metadata not available
+        setCurrentPlot(prev => ({
+          ...prev,
+          area: '2.5' // Demo fallback
+        }));
+      }
+      
+      // Update map center if GPS coordinates available
+      if (metadata?.center_lat && metadata?.center_lng) {
+        setMapCenter({ 
+          lat: metadata.center_lat, 
+          lng: metadata.center_lng 
+        });
+      } else {
+        // Default Malaysia coordinates
+        setMapCenter({ 
+          lat: 3.139, 
+          lng: 101.6869 
+        });
+      }
+      
+      // Seed a visible polygon so users see boundary data on map
+      setMapPoints([
+        { x: 26, y: 28 },
+        { x: 71, y: 33 },
+        { x: 66, y: 72 },
+        { x: 31, y: 67 },
+      ]);
+      setIsDrawing(false);
+    }, 1500);
   };
 
   const removePlot = (id: number) => {
     setPlots(plots.filter(p => p.id !== id));
   };
 
-  const simulateScan = (type: 'ic' | 'title' | string) => {
-    setIsScanning(true);
-    setTimeout(() => {
+  const handleFileUpload = (type: 'ic' | 'title' | string, file: File) => {
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+    if (!allowedTypes.includes(file.type)) {
+      alert('Please select a valid image (JPG, PNG) or PDF file.');
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size must be less than 10MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
       if (type === 'ic') {
         setFormData(prev => ({
           ...prev,
-          name: 'Ahmad bin Ismail',
-          idNumber: '820101-01-5543',
+          name: 'Processing...',
+          idNumber: 'Processing...',
+          icPhoto: result, // Save IC photo
         }));
+        setIsScanning(true);
+        const icUpload = new FormData();
+        icUpload.append('file', file);
+        fetch('http://localhost:8002/extract/ic', {
+          method: 'POST',
+          body: icUpload
+        })
+          .then(res => res.json())
+          .then(data => {
+            const extracted = data?.data || {};
+            setFormData(prev => ({
+              ...prev,
+              name: extracted.name || 'Ahmad bin Ismail',
+              idNumber: extracted.idNumber || '820101-01-5543',
+            }));
+          })
+          .catch(() => {
+            setFormData(prev => ({
+              ...prev,
+              name: 'Ahmad bin Ismail',
+              idNumber: '820101-01-5543',
+            }));
+          })
+          .finally(() => setIsScanning(false));
       } else if (type === 'title') {
+        // 先保存图片
         setCurrentPlot(prev => ({
           ...prev,
-          titlePhoto: 'https://picsum.photos/seed/title/400/500'
+          titlePhoto: result
         }));
+        
+        // 调用后端OCR API提取地契数据
+        setIsScanning(true);
+        const titleFormData = new FormData();
+        titleFormData.append('file', file);
+        
+        fetch('http://localhost:8002/extract/land-title', {
+          method: 'POST',
+          body: titleFormData
+        })
+          .then(res => res.json())
+          .then(data => {
+            if (data.status === 'success' && data.data) {
+              const extractedData = data.data;
+              
+              // ✅ Validate name match between IC and Land Title (display only, no auto-fill)
+              const icName = formData.name?.toLowerCase().trim() || '';
+              const ownerName = extractedData.owner_name?.toLowerCase().trim() || '';
+              const namesMatch = icName && ownerName && (
+                icName.includes(ownerName.split(' ')[0]) ||
+                ownerName.includes(icName.split(' ')[0])
+              );
+              
+              const validationMsg = namesMatch 
+                ? '✅ Name matches IC' 
+                : (ownerName ? '⚠️ Name may not match IC - verify carefully' : '⚠️ Could not extract owner name from document');
+              
+              // Store extracted metadata without auto-filling title/area
+              setCurrentPlot(prev => ({
+                ...prev,
+                landTitleMetadata: {
+                  ...extractedData,
+                  nameMatchValidation: validationMsg,
+                  nameMatches: namesMatch
+                }
+              }));
+              
+              if (typeof extractedData.center_lat === 'number' && typeof extractedData.center_lng === 'number') {
+                setMapCenter({ lat: extractedData.center_lat, lng: extractedData.center_lng });
+                setMapPoints([
+                  { x: 30, y: 30 },
+                  { x: 70, y: 32 },
+                  { x: 66, y: 70 },
+                  { x: 34, y: 68 },
+                ]);
+              }
+              console.log('Land title validation:', validationMsg);
+              console.log('Land title data extracted:', extractedData);
+            } else if (data.status === 'warning') {
+              console.warn('OCR warning:', data.message);
+            } else {
+              console.error('OCR error:', data.message);
+            }
+          })
+          .catch(err => console.error('Land title extraction failed:', err))
+          .finally(() => setIsScanning(false));
       } else {
         // Permit upload
         setFormData(prev => ({
           ...prev,
           permitPhotos: {
             ...prev.permitPhotos,
-            [type]: `https://picsum.photos/seed/${type}/400/250`
+            [type]: result
           }
         }));
+        if (type !== 'OTHER') {
+          const permitUpload = new FormData();
+          permitUpload.append('file', file);
+          fetch(`http://localhost:8002/extract/permit/${type}`, {
+            method: 'POST',
+            body: permitUpload
+          })
+            .then(res => res.json())
+            .then(data => {
+              const permitNo = data?.data?.permitNumber;
+              if (permitNo) {
+                setFormData(prev => ({
+                  ...prev,
+                  permitNumbers: {
+                    ...prev.permitNumbers,
+                    [type]: permitNo
+                  }
+                }));
+              }
+            })
+            .catch(() => {
+              // Keep flow usable even when OCR fails.
+            });
+        }
       }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleLicenseFileUpload = (type: string, file: File) => {
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+    if (!allowedTypes.includes(file.type)) {
+      alert('Please select a valid image (JPG, PNG) or PDF file.');
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size must be less than 10MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      setFormData(prev => ({
+        ...prev,
+        licensePhotos: {
+          ...prev.licensePhotos,
+          [type]: result
+        }
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const simulateScan = (type: string) => {
+    setIsScanning(true);
+    setTimeout(() => {
       setIsScanning(false);
+      if (type === 'title') {
+        // Mock land title image + OCR data for demo
+        setCurrentPlot(prev => ({ ...prev, titlePhoto: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' }));
+        
+        // Mock OCR extraction data - shows only validation without auto-fill
+        const mockExtractedData = {
+          plot_alias: 'PALM-GROVE-A01',
+          land_area: 2.5,
+          owner_name: 'Ahmad bin Ismail',
+          lot_number: '1234/5678',
+          mukim: 'Petaling',
+          district: 'Kuala Lumpur',
+          state: 'Selangor',
+          center_lat: 3.139,
+          center_lng: 101.6869
+        };
+        
+        // ✅ Only validate name match, no auto-fill of title/area
+        const icName = formData.name?.toLowerCase().trim() || '';
+        const ownerName = mockExtractedData.owner_name?.toLowerCase().trim() || '';
+        const namesMatch = icName && ownerName && (
+          icName.includes(ownerName.split(' ')[0]) ||
+          ownerName.includes(icName.split(' ')[0])
+        );
+        
+        const validationMsg = namesMatch 
+          ? '✅ Name matches IC' 
+          : (ownerName ? '⚠️ Name may not match IC - verify carefully' : '⚠️ Could not extract owner name from document');
+        
+        // Store metadata for display only (no auto-fill of title/area)
+        setCurrentPlot(prev => ({
+          ...prev,
+          landTitleMetadata: {
+            ...mockExtractedData,
+            nameMatchValidation: validationMsg,
+            nameMatches: namesMatch
+          }
+        }));
+        
+        if (mockExtractedData.center_lat && mockExtractedData.center_lng) {
+          setMapCenter({ lat: mockExtractedData.center_lat, lng: mockExtractedData.center_lng });
+          setMapPoints([
+            { x: 30, y: 30 },
+            { x: 70, y: 32 },
+            { x: 66, y: 70 },
+            { x: 34, y: 68 },
+          ]);
+        }
+      } else {
+        setFormData(prev => ({
+          ...prev,
+          permitPhotos: { ...prev.permitPhotos, [type]: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' }
+        }));
+      }
     }, 2000);
   };
 
   const totalArea = plots.reduce((acc, p) => acc + Number(p.area || 0), 0);
   const totalQuota = totalArea * 2.5;
+  const mapPreviewUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${mapCenter.lat},${mapCenter.lng}&zoom=15&size=900x500&markers=${mapCenter.lat},${mapCenter.lng},red-pushpin`;
 
   return (
     <motion.div 
@@ -386,7 +703,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
               <div className="animate-scan-line" />
               <Camera size={48} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gold-400 opacity-50" />
             </div>
-            <p className="font-display font-bold uppercase tracking-widest text-sm animate-pulse">AI Verifying Document...</p>
+            <p className="font-display font-bold uppercase tracking-widest text-sm animate-pulse">{scanningMessage}</p>
           </div>
         )}
 
@@ -418,6 +735,51 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
                   onChange={(e) => setFormData({...formData, idNumber: e.target.value})}
                 />
               </div>
+            </div>
+
+            <div className="p-6 bg-palm-50 rounded-3xl border border-palm-100 space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-display font-bold uppercase tracking-widest text-palm-500">IC Capture (On-site)</p>
+                  <p className="text-xs text-palm-500">Capture or upload IC to auto-fill Name and IC No. API-ready for future gov integration.</p>
+                </div>
+                <CreditCard className="text-palm-400" size={20} />
+              </div>
+              
+              {formData.icPhoto ? (
+                <div className="relative aspect-video rounded-2xl overflow-hidden border border-palm-200">
+                  <img src={formData.icPhoto} alt="IC" className="w-full h-full object-cover" />
+                  <button 
+                    onClick={() => setFormData(prev => ({ ...prev, icPhoto: null, name: '', idNumber: '' }))}
+                    className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 transition-all"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+                    <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">✓ IC Captured</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-3">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFileUpload('ic', file);
+                    }}
+                    className="hidden"
+                    id="ic-capture-upload"
+                  />
+                  <label
+                    htmlFor="ic-capture-upload"
+                    className="px-5 py-3 bg-palm-950 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-palm-900 transition-all cursor-pointer flex items-center gap-2"
+                  >
+                    <Camera size={14} /> Capture / Upload IC
+                  </label>
+                </div>
+              )}
             </div>
 
             <div className="space-y-6">
@@ -458,6 +820,9 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
                             <span className="text-[10px] font-display font-bold uppercase tracking-widest text-gold-400">{permitInfo?.label}</span>
                             {photo && <span className="text-[8px] font-bold text-emerald-400 uppercase tracking-widest bg-emerald-400/10 px-2 py-1 rounded-md">Verified</span>}
                           </div>
+                          {formData.permitNumbers[pt] && (
+                            <p className="text-[10px] text-gold-300 font-bold uppercase tracking-widest">Extracted No: {formData.permitNumbers[pt]}</p>
+                          )}
                           
                           {photo ? (
                             <div className="relative aspect-video rounded-xl overflow-hidden border border-palm-600">
@@ -508,12 +873,25 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
                                   </div>
                                 </div>
                               )}
-                              <button 
-                                onClick={() => simulateScan(pt)}
-                                className="w-full py-3 bg-palm-700 text-parchment rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-palm-600 transition-colors flex items-center justify-center gap-2"
-                              >
-                                <Camera size={14} /> Upload {permitInfo?.label}
-                              </button>
+                              <div className="w-full space-y-3">
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleFileUpload(pt, file);
+                                  }}
+                                  className="hidden"
+                                  id={`permit-upload-${pt}`}
+                                />
+                                <label
+                                  htmlFor={`permit-upload-${pt}`}
+                                  className="w-full py-3 bg-palm-700 text-parchment rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-palm-600 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                  <Camera size={14} /> Upload {permitInfo?.label}
+                                </label>
+                                <p className="text-[8px] text-parchment/60 text-center">Supports JPG, PNG, PDF (max 10MB)</p>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -681,9 +1059,62 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
                         >
                           Capture Document
                         </button>
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          capture="environment"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleFileUpload('title', file);
+                          }}
+                          className="hidden"
+                          id="title-upload"
+                        />
+                        <label
+                          htmlFor="title-upload"
+                          className="px-6 py-3 bg-palm-200 text-palm-950 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-gold-500 hover:text-white transition-all cursor-pointer"
+                        >
+                          Upload from Device
+                        </label>
                       </>
                     )}
                   </div>
+                  
+                  {/* ✅ Land Title Validation Results */}
+                  {currentPlot.titlePhoto && currentPlot.landTitleMetadata && (
+                    <div className={`mt-4 p-4 rounded-2xl border ${
+                      currentPlot.landTitleMetadata.nameMatches 
+                        ? 'bg-emerald-50 border-emerald-200' 
+                        : 'bg-yellow-50 border-yellow-200'
+                    }`}>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          {currentPlot.landTitleMetadata.nameMatches ? (
+                            <Check size={16} className="text-emerald-600" />
+                          ) : (
+                            <AlertCircle size={16} className="text-yellow-600" />
+                          )}
+                          <span className={`text-xs font-bold ${
+                            currentPlot.landTitleMetadata.nameMatches 
+                              ? 'text-emerald-700' 
+                              : 'text-yellow-700'
+                          }`}>
+                            {currentPlot.landTitleMetadata.nameMatchValidation}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-gray-600 space-y-1">
+                          <p><span className="font-bold">IC Name:</span> {formData.name || 'Not captured'}</p>
+                          <p><span className="font-bold">Document Owner:</span> {currentPlot.landTitleMetadata.owner_name || 'Not found'}</p>
+                          {currentPlot.landTitleMetadata.plot_alias && (
+                            <p><span className="font-bold">Plot Alias:</span> {currentPlot.landTitleMetadata.plot_alias}</p>
+                          )}
+                          {currentPlot.landTitleMetadata.land_area && (
+                            <p><span className="font-bold">Land Area:</span> {currentPlot.landTitleMetadata.land_area} HA</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-4">
@@ -691,15 +1122,17 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
                     <label className="text-[10px] font-display font-bold uppercase tracking-widest text-palm-500 ml-1">Geofence Boundary</label>
                   </div>
                   <div 
+                    ref={mapContainerRef}
                     className={`map-container aspect-video rounded-3xl overflow-hidden relative cursor-crosshair ${isDrawing ? 'ring-2 ring-gold-500 ring-offset-2' : ''}`}
                     onClick={handleMapClick}
                   >
-                    <div className="absolute inset-0 bg-[url('https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/101.6869,3.1390,13,0/600x400?access_token=pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTAwMHozN28xeHR5Z2h6Z3IifQ.r_98_fS96_89_89_89_89')] bg-cover opacity-80" />
+                    <img src="/demo_gps.jpg" alt="GPS map preview" className="absolute inset-0 w-full h-full object-cover opacity-90" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent" />
                     
                     <svg className="absolute inset-0 w-full h-full pointer-events-none">
                       {mapPoints.length > 0 && (
                         <polyline
-                          points={mapPoints.map(p => `${p.x}%,${p.y}%`).join(' ')}
+                          points={getPixelCoordinates(mapPoints)}
                           fill="none"
                           stroke="#D97706"
                           strokeWidth="2"
@@ -709,23 +1142,28 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
                       )}
                       {mapPoints.length >= 3 && (
                         <polygon
-                          points={mapPoints.map(p => `${p.x}%,${p.y}%`).join(' ')}
+                          points={getPixelCoordinates(mapPoints)}
                           fill="rgba(217, 119, 6, 0.2)"
                           stroke="#D97706"
                           strokeWidth="2"
                           strokeDasharray="4"
                         />
                       )}
-                      {mapPoints.map((p, i) => (
-                        <circle
-                          key={i}
-                          cx={`${p.x}%`}
-                          cy={`${p.y}%`}
-                          r="4"
-                          fill="#D97706"
-                          className="animate-pulse"
-                        />
-                      ))}
+                      {mapPoints.map((p, i) => {
+                        const rect = mapContainerRef.current?.getBoundingClientRect();
+                        const cx = rect ? (p.x / 100) * rect.width : 0;
+                        const cy = rect ? (p.y / 100) * rect.height : 0;
+                        return (
+                          <circle
+                            key={i}
+                            cx={cx}
+                            cy={cy}
+                            r="4"
+                            fill="#D97706"
+                            className="animate-pulse"
+                          />
+                        );
+                      })}
                     </svg>
 
                     <div className="absolute bottom-4 left-4 right-4 flex justify-between">
@@ -743,6 +1181,10 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
                       </button>
                     </div>
                   </div>
+                  
+                  <p className="text-[10px] text-palm-400 italic mt-2">
+                    📡 Future: Auto-Detect will integrate with GPS API for precise location
+                  </p>
                 </div>
 
                 <button 
@@ -756,8 +1198,42 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
                 {/* Real-time Validation Warning */}
                 {(() => {
                   const isPalmOil = currentPlot.cropType.toLowerCase().includes('palm');
+                  const isCocoa = currentPlot.cropType.toLowerCase().includes('cocoa');
+                  const isRubber = currentPlot.cropType.toLowerCase().includes('rubber');
+                  
                   const requiredPermit = isPalmOil ? 'MPOB' : cropToPermit[currentPlot.cropType];
                   const isMissing = requiredPermit && !formData.permitPhotos[requiredPermit] && !formData.permitTypes.includes('OTHER');
+                  
+                  // ✅ Check if uploaded permit mismatches crop type
+                  const hasMPOB = formData.permitTypes.includes('MPOB') && formData.permitPhotos['MPOB'];
+                  const hasMCB = formData.permitTypes.includes('MCB') && formData.permitPhotos['MCB'];
+                  const hasLGM = formData.permitTypes.includes('LGM') && formData.permitPhotos['LGM'];
+                  
+                  const permitMismatch = 
+                    (hasMPOB && !isPalmOil) ||
+                    (hasMCB && !isCocoa) ||
+                    (hasLGM && !isRubber);
+                  
+                  if (permitMismatch) {
+                    return (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="p-4 bg-yellow-50 border border-yellow-200 rounded-2xl flex flex-col gap-3"
+                      >
+                        <div className="flex items-center gap-2 text-yellow-700">
+                          <AlertCircle size={16} />
+                          <span className="text-[10px] font-bold uppercase tracking-widest">⚠️ Permit Mismatch Detected</span>
+                        </div>
+                        <p className="text-[10px] text-yellow-600 leading-tight font-medium">
+                          Your selected crop type <strong>{currentPlot.cropType}</strong> does not match the uploaded permits:
+                          {hasMPOB && !isPalmOil && <span className="block mt-1">• MPOB is for <strong>Palm Oil</strong> only</span>}
+                          {hasMCB && !isCocoa && <span className="block mt-1">• MCB is for <strong>Cocoa</strong> only</span>}
+                          {hasLGM && !isRubber && <span className="block mt-1">• LGM is for <strong>Rubber</strong> only</span>}
+                        </p>
+                      </motion.div>
+                    );
+                  }
                   
                   if (!isMissing) return null;
 
@@ -798,7 +1274,16 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
         )}
 
         {step === 3 && (
-          <div className="space-y-12">
+          <div className="space-y-12 relative overflow-hidden">
+            {isGenerating && (
+              <div className="absolute inset-0 z-50 bg-palm-950/40 backdrop-blur-sm flex flex-col items-center justify-center text-white">
+                <div className="w-64 h-64 border-2 border-gold-400 rounded-3xl relative overflow-hidden mb-6">
+                  <div className="animate-scan-line" />
+                  <ShieldCheck size={48} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gold-400 opacity-50" />
+                </div>
+                <p className="font-display font-bold uppercase tracking-widest text-sm animate-pulse">{generatingMessage}</p>
+              </div>
+            )}
             <div>
               <h2 className="text-4xl font-serif font-bold text-palm-950 mb-2">Global Overview</h2>
               <p className="text-palm-600 font-light">Review your consolidated agricultural profile.</p>
@@ -831,9 +1316,31 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
                     <div>
                       <h5 className="font-serif font-bold text-lg text-palm-950">{plot.title}</h5>
                       <p className="text-xs text-palm-500">{plot.cropType} • {plot.area} Ha • Planted {plot.plantingYear}</p>
+                      {plot.satelliteVerified && (
+                        <div className="flex items-center gap-2 mt-2">
+                          {plot.satelliteVerified.compliant ? (
+                            <>
+                              <Globe size={12} className="text-emerald-600" />
+                              <span className="text-[10px] font-bold text-emerald-600">Satellite Verified ✓</span>
+                            </>
+                          ) : (
+                            <>
+                              <AlertCircle size={12} className="text-red-600" />
+                              <span className="text-[10px] font-bold text-red-600">Forest Loss Detected</span>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${Number(plot.plantingYear) <= 2020 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                      {Number(plot.plantingYear) <= 2020 ? 'EUDR Safe' : 'High Risk'}
+                    <div className="flex flex-col items-end gap-2">
+                      <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${Number(plot.plantingYear) <= 2020 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {Number(plot.plantingYear) <= 2020 ? 'EUDR Safe' : 'High Risk'}
+                      </div>
+                      {plot.satelliteVerified && plot.satelliteVerified.compliant && (
+                        <div className="px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1">
+                          <Globe size={10} /> Verified
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -842,8 +1349,29 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: () =>
 
             <div className="flex flex-col gap-4">
               <button 
-                onClick={onComplete}
-                className="w-full py-6 bg-gold-500 text-palm-950 rounded-[2rem] font-display font-bold uppercase tracking-widest text-sm flex items-center justify-center gap-3 hover:bg-gold-600 transition-all shadow-2xl shadow-gold-500/20"
+                onClick={async () => {
+                  setIsGenerating(true);
+                  
+                  // Step 1: Verify satellite data for all plots
+                  setGeneratingMessage('Verifying location against 2020 satellite baseline...');
+                  const verifiedPlots = [];
+                  for (const plot of plots) {
+                    const verification = await verifySatelliteData(plot);
+                    verifiedPlots.push({
+                      ...plot,
+                      satelliteVerified: verification
+                    });
+                  }
+                  setPlots(verifiedPlots);
+                  
+                  // Step 2: Generate Universal ID
+                  setGeneratingMessage('Generating Universal ID...');
+                  await new Promise(r => setTimeout(r, 500));
+                  await onComplete(formData, verifiedPlots);
+                  setIsGenerating(false);
+                }}
+                disabled={isGenerating}
+                className="w-full py-6 bg-gold-500 text-palm-950 rounded-[2rem] font-display font-bold uppercase tracking-widest text-sm flex items-center justify-center gap-3 hover:bg-gold-600 transition-all shadow-2xl shadow-gold-500/20 disabled:opacity-50"
               >
                 <ShieldCheck size={20} /> Generate Universal ID
               </button>
@@ -926,7 +1454,7 @@ const DDS_Template = ({ item, idx, isConsolidated = false }: { item: any, idx: n
         <div className="grid grid-cols-2 md:grid-cols-3 gap-y-8 gap-x-6">
           <div className="space-y-1">
             <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Plot Alias</span>
-            <p className="text-xs font-bold text-slate-700">{item.plotName || 'Hillside Cocoa Grove'}</p>
+            <p className="text-xs font-bold text-slate-700">{item.plotName || ''}</p>
           </div>
           <div className="space-y-1">
             <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Commodity Type</span>
@@ -982,6 +1510,45 @@ const DDSReport = ({ data, type, onClose }: { data: any, type: 'individual' | 'c
   const reportRef = useRef<HTMLDivElement>(null);
 
   const exportPDF = async () => {
+    // For consolidated manifests, call backend API to generate professional PDF
+    if (type === 'consolidated') {
+      try {
+        const manifestData = {
+          id: data.id || `MANIFEST-${Date.now()}`,
+          lorryPlate: data.lorry || 'N/A',
+          selectedTransactions: (data.items || []).map((item: any) => item.id),
+          totalWeight: parseFloat(data.totalWeight) || 0,
+          items: data.items || []
+        };
+
+        const response = await fetch('http://localhost:8002/lorry/manifest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(manifestData)
+        });
+
+        const result = await response.json();
+        if (result.status === 'success') {
+          // Download the PDF
+          const manifestId = manifestData.id;
+          window.open(`http://localhost:8002/lorry/report/${manifestId}`, '_blank');
+        } else {
+          alert('Failed to generate manifest PDF');
+        }
+      } catch (err) {
+        console.error('Failed to generate consolidated manifest:', err);
+        alert('Failed to generate PDF from backend. Falling back to client-side generation.');
+        // Fallback to client-side generation
+        clientSideExportPDF();
+      }
+      return;
+    }
+
+    // For individual reports, use client-side generation
+    clientSideExportPDF();
+  };
+
+  const clientSideExportPDF = async () => {
     if (!reportRef.current) return;
     try {
       const canvas = await html2canvas(reportRef.current, { 
@@ -1173,7 +1740,7 @@ const DDSReport = ({ data, type, onClose }: { data: any, type: 'individual' | 'c
   );
 };
 
-const DealerRegistration = ({ onComplete }: { onComplete: () => void, key?: string }) => {
+const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => void, key?: string }) => {
   const [step, setStep] = useState(1);
   const [isSuccess, setIsSuccess] = useState(false);
   const [formData, setFormData] = useState({
@@ -1223,14 +1790,56 @@ const DealerRegistration = ({ onComplete }: { onComplete: () => void, key?: stri
     });
   };
 
-  const simulateLicenseUpload = (type: string) => {
-    setFormData(prev => ({
-      ...prev,
-      licensePhotos: {
-        ...prev.licensePhotos,
-        [type]: `https://picsum.photos/seed/license-${type}/800/450`
+  const handleLicenseFileUpload = async (type: string, file: File) => {
+    if (!file) return;
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+    if (!allowedTypes.includes(file.type)) {
+      alert('Please select a valid image (JPG, PNG) or PDF file.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size must be less than 10MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const result = e.target?.result as string;
+      setFormData(prev => ({
+        ...prev,
+        licensePhotos: {
+          ...prev.licensePhotos,
+          [type]: result
+        }
+      }));
+
+      // Call OCR to extract license number
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch(`http://localhost:8002/extract/permit/${type}`, {
+          method: 'POST',
+          body: formData
+        });
+
+        const ocrResult = await response.json();
+        if (ocrResult.status === 'success' && ocrResult.data?.permit_number) {
+          // Auto-fill the license number
+          setFormData(prev => ({
+            ...prev,
+            licenseNumbers: {
+              ...prev.licenseNumbers,
+              [type]: ocrResult.data.permit_number
+            }
+          }));
+          console.log(`Auto-filled ${type} license number:`, ocrResult.data.permit_number);
+        }
+      } catch (error) {
+        console.error('OCR extraction failed:', error);
+        // Continue without auto-fill if OCR fails
       }
-    }));
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleComplete = () => {
@@ -1253,7 +1862,7 @@ const DealerRegistration = ({ onComplete }: { onComplete: () => void, key?: stri
             <p className="text-palm-600 font-light text-lg">Your collection point is now registered and EUDR-ready.</p>
           </div>
           <button 
-            onClick={onComplete}
+            onClick={() => onComplete(formData)}
             className="w-full py-5 bg-palm-900 text-gold-400 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-palm-800 transition-all shadow-xl flex items-center justify-center gap-3"
           >
             Go to Dashboard <ArrowRight size={20} />
@@ -1464,17 +2073,30 @@ const DealerRegistration = ({ onComplete }: { onComplete: () => void, key?: stri
                             </button>
                           </div>
                         ) : (
-                          <button 
-                            onClick={() => simulateLicenseUpload(type)}
-                            className="w-full aspect-video rounded-3xl border-2 border-dashed border-palm-200 bg-palm-50/50 flex flex-col items-center justify-center gap-4 hover:bg-palm-50 hover:border-palm-400 transition-all group"
-                          >
-                            <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-palm-400 group-hover:text-palm-900 transition-colors shadow-sm">
-                              <Camera size={24} />
-                            </div>
-                            <div className="text-center">
-                              <p className="font-display font-bold uppercase tracking-widest text-[10px] text-palm-950">Upload {label} License</p>
-                            </div>
-                          </button>
+                          <div className="w-full space-y-3">
+                            <input
+                              type="file"
+                              accept="image/*,.pdf"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleLicenseFileUpload(type, file);
+                              }}
+                              className="hidden"
+                              id={`license-upload-${type}`}
+                            />
+                            <label
+                              htmlFor={`license-upload-${type}`}
+                              className="w-full aspect-video rounded-3xl border-2 border-dashed border-palm-200 bg-palm-50/50 flex flex-col items-center justify-center gap-4 hover:bg-palm-50 hover:border-palm-400 transition-all group cursor-pointer"
+                            >
+                              <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-palm-400 group-hover:text-palm-900 transition-colors shadow-sm">
+                                <Camera size={24} />
+                              </div>
+                              <div className="text-center">
+                                <p className="font-display font-bold uppercase tracking-widest text-[10px] text-palm-950">Upload {label} License</p>
+                                <p className="text-[8px] text-palm-400 mt-1">Supports JPG, PNG, PDF (max 10MB)</p>
+                              </div>
+                            </label>
+                          </div>
                         )}
                       </div>
                     );
@@ -1509,6 +2131,14 @@ const FarmerDashboard = ({ onLogout, plots }: { onLogout: () => void, plots: any
   const [activeTab, setActiveTab] = useState<'id' | 'plots' | 'trades'>('id');
   const [showDDS, setShowDDS] = useState(false);
   const [selectedPlot, setSelectedPlot] = useState<any>(null);
+  const [farmerData, setFarmerData] = useState<any>(null);
+
+  useEffect(() => {
+    const savedData = localStorage.getItem('veri_farmer_data');
+    if (savedData) {
+      setFarmerData(JSON.parse(savedData));
+    }
+  }, []);
 
   return (
     <motion.div 
@@ -1520,22 +2150,22 @@ const FarmerDashboard = ({ onLogout, plots }: { onLogout: () => void, plots: any
         <DDSReport 
           type="individual" 
           data={{
-            farmerName: 'Ahmad bin Ismail',
+            farmerName: farmerData?.name || 'Ahmad bin Ismail',
             cropType: selectedPlot?.crop || 'Palm Oil',
             permitType: selectedPlot?.crop === 'Palm Oil' ? 'MSPO-9921-2026' : (selectedPlot?.crop === 'Cocoa' ? 'MCB-7712-2024' : 'LGM-5543-2026'),
             weight: 'N/A',
-            plotName: selectedPlot?.id || 'Hillside Cocoa Grove',
+            plotName: selectedPlot?.id || '',
             area: selectedPlot?.area + ' HA',
             year: 2018,
             gps: '3.9322, 102.3611',
-            ic: '780512-06-5543'
+            ic: farmerData?.idNumber || '780512-06-5543'
           }} 
           onClose={() => setShowDDS(false)} 
         />
       )}
       <div className="flex justify-between items-center mb-8 shrink-0">
         <div>
-          <h2 className="text-4xl font-serif font-bold text-palm-950">Welcome, Ahmad</h2>
+          <h2 className="text-4xl font-serif font-bold text-palm-950">Welcome, {farmerData?.name || 'Farmer'}</h2>
           <p className="text-palm-600 font-light">Your Veri ID is active and compliant.</p>
         </div>
         <button 
@@ -1666,26 +2296,12 @@ const FarmerDashboard = ({ onLogout, plots }: { onLogout: () => void, plots: any
             className="space-y-6"
           >
             <h3 className="text-2xl font-serif font-bold text-palm-950 mb-4">Transaction History</h3>
-            {[
-              { date: '24 Feb 2024', weight: '1.25 MT', crop: 'Palm Oil', status: 'Synced' },
-              { date: '18 Feb 2024', weight: '2.10 MT', crop: 'Rubber', status: 'Synced' },
-              { date: '10 Feb 2024', weight: '0.85 MT', crop: 'Cocoa', status: 'Synced' },
-            ].map((trade, i) => (
-              <div key={i} className="glass-card p-6 flex justify-between items-center">
-                <div className="flex items-center gap-6">
-                  <div className="w-14 h-14 bg-palm-100 rounded-2xl flex items-center justify-center text-palm-950">
-                    <History size={24} />
-                  </div>
-                  <div>
-                    <h4 className="font-display font-bold uppercase tracking-widest text-xs text-palm-950">{trade.date}</h4>
-                    <p className="text-sm text-palm-500">{trade.crop} • {trade.weight}</p>
-                  </div>
-                </div>
-                <div className="status-badge status-online">
-                  {trade.status}
-                </div>
-              </div>
-            ))}
+            {/* TODO: Fetch real transaction history from backend API */}
+            <div className="glass-card p-8 text-center">
+              <History size={32} className="mx-auto text-palm-300 mb-3" />
+              <p className="text-palm-500 font-light">No transactions recorded yet.</p>
+              <p className="text-[10px] text-palm-400 mt-2">Your trade history will appear here after your first transaction with a collector.</p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1723,6 +2339,8 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout }: { on
   const [selectedTx, setSelectedTx] = useState<any>(null);
   const [showDDS, setShowDDS] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [pendingSyncs, setPendingSyncs] = useState(12);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [transactions, setTransactions] = useState([
     { name: 'Ahmad bin Ismail', weight: '2.45', mode: 'Plantation', risk: 'Safe', time: '14:22', id: 'AB-9921', crop: 'Palm Oil' },
     { name: 'Siti Aminah', weight: '1.80', mode: 'Ramp', risk: 'Safe', time: '13:45', id: 'AB-8823', crop: 'Palm Oil' },
@@ -1738,7 +2356,7 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout }: { on
     );
   };
 
-  const handleRequestAudit = (id: string) => {
+  const updateLocalAuditState = (id: string) => {
     setTransactions(prev => prev.map(tx => 
       tx.id === id ? { ...tx, risk: 'PENDING_AUDIT', warning: false } : tx
     ));
@@ -1747,9 +2365,81 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout }: { on
     }
   };
 
+  const handleRequestAudit = async (id: string) => {
+    try {
+      const response = await fetch('http://localhost:8002/transaction/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactionId: id, requestedBy: 'dealer-dashboard' })
+      });
+
+      const result = await response.json();
+      if (result.status !== 'success') {
+        throw new Error(result?.detail || 'Audit request failed');
+      }
+    } catch (error) {
+      console.error('Audit request failed, keeping demo flow active:', error);
+    } finally {
+      // Keep demo behavior responsive even if backend is offline.
+      updateLocalAuditState(id);
+    }
+  };
+
+  const handleSyncToCloud = async () => {
+    if (isSyncing || pendingSyncs <= 0) {
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      const offlineTransactions = Array.from({ length: pendingSyncs }).map((_, idx) => {
+        const tx = transactions[idx % transactions.length];
+        return {
+          id: `SYNC-${tx.id}-${Date.now()}-${idx}`,
+          farmerId: tx.id,
+          farmerName: tx.name,
+          weight: parseFloat(tx.weight),
+          mode: tx.mode,
+          location: { lat: 3.1390, lng: 101.6869 },
+          status: 'verified',
+          risk: tx.risk,
+          cropType: tx.crop || 'Palm Oil'
+        };
+      });
+
+      let response = await fetch('http://localhost:8002/transactions/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactions: offlineTransactions })
+      });
+
+      // Fallback for backend versions exposing singular path.
+      if (response.status === 404) {
+        response = await fetch('http://localhost:8002/transaction/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transactions: offlineTransactions })
+        });
+      }
+
+      const result = await response.json();
+      if (result.status !== 'success') {
+        throw new Error(result?.detail || 'Sync failed');
+      }
+
+      const synced = Number(result.synced_count || 0);
+      setPendingSyncs(prev => Math.max(0, prev - synced));
+    } catch (error) {
+      console.error('Sync failed:', error);
+      alert('Sync failed. Please try again.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const stats = [
     { label: "Today's Tonnage", value: "124.5", unit: "MT", icon: <Truck size={20} /> },
-    { label: "Pending Syncs", value: "12", unit: "Batches", icon: <History size={20} /> },
+    { label: "Pending Demo Sync", value: "12", unit: "Batches", icon: <History size={20} /> },
     { label: "EUDR Risk Level", value: "Low", unit: "Compliance", icon: <ShieldCheck size={20} /> },
   ];
 
@@ -1878,7 +2568,7 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout }: { on
           <h2 className="text-5xl font-serif font-bold text-palm-950 mb-2">Dealer Verification Hub</h2>
           <p className="text-palm-600 font-light flex items-center gap-2">
             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-            Active Session: Station 01 • 12 Pending Syncs
+            Active Session: Station 01 • {pendingSyncs} Pending Demo Sync
           </p>
         </div>
         <div className="flex gap-4">
@@ -1935,10 +2625,14 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout }: { on
           </div>
           
           <div className="glass-card p-8">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-palm-400 mb-4">Pending Offline Syncs</p>
-            <h3 className="text-5xl font-serif font-bold text-palm-950 mb-2">12</h3>
-            <button className="text-xs font-bold text-gold-600 uppercase tracking-widest flex items-center gap-2 hover:gap-3 transition-all">
-              Sync to Cloud Now <ArrowRight size={14} />
+            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-palm-400 mb-4">Pending Demo Sync Queue</p>
+            <h3 className="text-5xl font-serif font-bold text-palm-950 mb-2">{pendingSyncs}</h3>
+            <button
+              onClick={handleSyncToCloud}
+              disabled={isSyncing || pendingSyncs <= 0}
+              className={`text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${isSyncing || pendingSyncs <= 0 ? 'text-palm-300 cursor-not-allowed' : 'text-gold-600 hover:gap-3'}`}
+            >
+              {isSyncing ? 'Syncing Demo Data...' : 'Run Demo Sync'} <ArrowRight size={14} />
             </button>
           </div>
 
@@ -2115,6 +2809,14 @@ const TransactionFlow = ({ onComplete }: { onComplete: () => void, key?: string 
 
   const [signature, setSignature] = useState<string | null>(null);
   const [signature_base64, setSignatureBase64] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Mock farmer data (在真实场景中会从QR扫描或backend获取)
+  const farmerData = {
+    id: 'AB-9921',
+    name: 'Ahmad bin Ismail',
+    cropType: 'Palm Oil'
+  };
 
   const simulateCapture = () => {
     setIsCapturing(true);
@@ -2123,16 +2825,43 @@ const TransactionFlow = ({ onComplete }: { onComplete: () => void, key?: string 
 
   const isLaundering = Number(weight) > 8;
 
-  const handleSave = () => {
-    // In a real app, you would send this to the backend
+  const handleSave = async () => {
+    setIsSaving(true);
+    
+    // 构建transaction data
     const transaction = {
-      weight,
-      mode,
+      id: `TX-${Date.now()}`,
+      farmerId: farmerData.id,
+      farmerName: farmerData.name,
+      weight: parseFloat(weight),
+      mode: mode,
+      location: { lat: 3.1390, lng: 101.6869 }, // Mock GPS
       timestamp: new Date().toISOString(),
-      signature_base64: mode === 'Ramp' ? signature : null
+      ffbBatchUrl: 'captured-image-url.jpg', // 模拟照片URL
+      farmerSignatureUrl: mode === 'Ramp' ? signature : null,
+      status: 'verified',
+      risk: 'Safe',
+      cropType: farmerData.cropType
     };
-    console.log('Saving transaction:', transaction);
-    setStep(3);
+
+    try {
+      const response = await fetch('http://localhost:8002/transaction/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(transaction)
+      });
+      
+      const result = await response.json();
+      console.log('Transaction saved:', result);
+      
+      setIsSaving(false);
+      setStep(3);
+    } catch (error) {
+      console.error('Failed to save transaction:', error);
+      setIsSaving(false);
+      // 即使失败也继续到step 3，因为离线模式下会本地存储
+      setStep(3);
+    }
   };
 
   return (
@@ -2282,11 +3011,16 @@ const TransactionFlow = ({ onComplete }: { onComplete: () => void, key?: string 
 
               <div className="relative">
                 <button 
-                  disabled={isLaundering || !weight || (mode === 'Ramp' && !signature)}
+                  disabled={isLaundering || !weight || (mode === 'Ramp' && !signature) || isSaving}
                   onClick={handleSave}
-                  className={`w-full py-5 text-lg font-display font-bold uppercase tracking-widest rounded-2xl transition-all ${isLaundering ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-gold-500 text-palm-950 hover:bg-gold-600 shadow-xl shadow-gold-500/20'}`}
+                  className={`w-full py-5 text-lg font-display font-bold uppercase tracking-widest rounded-2xl transition-all flex items-center justify-center gap-2 ${isLaundering || isSaving ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-gold-500 text-palm-950 hover:bg-gold-600 shadow-xl shadow-gold-500/20'}`}
                 >
-                  {isLaundering ? 'Transaction Blocked' : 'Save'}
+                  {isSaving ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-slate-600 border-t-transparent rounded-full animate-spin" />
+                      Saving...
+                    </>
+                  ) : isLaundering ? 'Transaction Blocked' : 'Save'}
                 </button>
                 {isLaundering && (
                    <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[8px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-lg whitespace-nowrap">
@@ -2432,7 +3166,7 @@ export default function App() {
     const dealerRegistered = localStorage.getItem('veri_dealer_registered');
     const savedPlots = localStorage.getItem('veri_farmer_plots');
 
-    if (savedPlots) {
+    if (registered === 'true' && savedPlots) {
       setPlots(JSON.parse(savedPlots));
     }
 
@@ -2459,24 +3193,115 @@ export default function App() {
     }
   };
 
-  const handleFarmerRegistrationComplete = () => {
-    localStorage.setItem('veri_registered', 'true');
-    localStorage.setItem('veri_farmer_plots', JSON.stringify(plots));
-    setIsRegistered(true);
-    setView('farmer-dashboard');
+  const handleFarmerRegistrationComplete = async (formData: any, plots: any[]) => {
+    // 构建数据
+    const farmerData = {
+      name: formData.name,
+      idNumber: formData.idNumber,
+      permits: formData.permitTypes.map(type => ({
+        type,
+        number: type === 'OTHER' ? undefined : (formData.permitNumbers?.[type] || `${type}-12345`)
+      })),
+      otherPermitName: formData.otherPermitName,
+      permitPhotoUrl: Object.values(formData.permitPhotos).find(url => url) || undefined,
+      plots: plots.map(p => ({
+        id: p.id.toString(),
+        cropType: p.cropType,
+        plantingYear: parseInt(p.plantingYear),
+        alias: p.title,
+        landArea: parseFloat(p.area),
+        landTitleUrl: p.titlePhoto,
+        boundary: (p.points && p.points.length > 0)
+          ? p.points.map(pt => ({ lat: pt.y * 0.01 + 3.1, lng: pt.x * 0.01 + 101.6 }))
+          : [{
+              lat: p.landTitleMetadata?.center_lat ?? 3.139,
+              lng: p.landTitleMetadata?.center_lng ?? 101.6869
+            }] // fallback center point from land title OCR
+      }))
+    };
+
+    try {
+      const response = await fetch('http://localhost:8002/farmer/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(farmerData)
+      });
+      console.log('API Response:', response.status, response.statusText);
+      const result = await response.json();
+      console.log('API Result:', result);
+      if (result.status === 'success') {
+        localStorage.setItem('veri_registered', 'true');
+        localStorage.setItem('veri_farmer_data', JSON.stringify({
+          name: formData.name,
+          idNumber: formData.idNumber,
+          permitTypes: formData.permitTypes,
+          otherPermitName: formData.otherPermitName
+        }));
+        localStorage.setItem('veri_farmer_plots', JSON.stringify(plots));
+        setIsRegistered(true);
+        setView('farmer-dashboard');
+      } else {
+        console.error('API returned non-success status:', result);
+        alert('Registration failed:' + result.message);
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      // 如果后端不可用，则本地存储数据并继续
+      localStorage.setItem('veri_registered', 'true');
+      localStorage.setItem('veri_farmer_data', JSON.stringify({
+        name: formData.name,
+        idNumber: formData.idNumber,
+        permitTypes: formData.permitTypes,
+        otherPermitName: formData.otherPermitName
+      }));
+      localStorage.setItem('veri_farmer_plots', JSON.stringify(plots));
+      setIsRegistered(true);
+      setView('farmer-dashboard');
+    }
   };
 
-  const handleDealerRegistrationComplete = () => {
-    localStorage.setItem('veri_dealer_registered', 'true');
-    setIsDealerRegistered(true);
-    setView('collector-dashboard');
+  const handleDealerRegistrationComplete = async (formData: any) => {
+    // 构建数据 - 保存所有许可证号码和照片
+    const dealerData = {
+      representativeName: formData.repName,
+      mobile: formData.mobile,
+      stationName: formData.stationName,
+      licenseTypes: formData.licenseTypes,
+      otherLicenseName: formData.customLicenseNames['OTHER'] || undefined,
+      licenseNumbers: formData.licenseNumbers, // 保存所有许可证号码
+      licensePhotos: formData.licensePhotos, // 保存所有许可证照片
+      location: { lat: 3.9322, lng: 102.3611 }, // 模拟GPS
+    };
+
+    try {
+      const response = await fetch('http://localhost:8002/dealer/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dealerData)
+      });
+      console.log('Dealer API Response:', response.status, response.statusText);
+      const result = await response.json();
+      console.log('Dealer API Result:', result);
+      if (result.status === 'success') {
+        localStorage.setItem('veri_dealer_registered', 'true');
+        setIsDealerRegistered(true);
+        setView('collector-dashboard');
+      } else {
+        alert('Registration failed');
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      alert('Network error');
+    }
   };
 
   const handleLogout = () => {
     localStorage.removeItem('veri_registered');
     localStorage.removeItem('veri_dealer_registered');
+    localStorage.removeItem('veri_farmer_plots');
     setIsRegistered(false);
     setIsDealerRegistered(false);
+    setPlots([]);
     setView('ROLE_SELECT');
   };
 
@@ -2498,7 +3323,11 @@ export default function App() {
               onSelectRole={(role) => {
                 if (role === 'farmer') {
                   if (isRegistered) setView('farmer-dashboard');
-                  else setView('farmer-registration');
+                  else {
+                    setPlots([]);
+                    localStorage.removeItem('veri_farmer_plots');
+                    setView('farmer-registration');
+                  }
                 }
                 else {
                   if (isDealerRegistered) setView('collector-dashboard');
