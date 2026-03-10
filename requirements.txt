@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+pytesseract
+pillow
+python-multipart
+PyMuPDF
+fpdf
+qrcode
+shapely
+folium
+pandas
+planetary-computer
+pystac-client
+rasterio
+numpy
+matplotlib

@@ -1,0 +1,117 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700&family=Inter:wght@100;200;300;400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Cormorant Garamond", serif;
+  --font-display: "Space Grotesk", sans-serif;
+  
+  --color-palm-950: #022c22;
+  --color-palm-900: #064e3b;
+  --color-palm-800: #065f46;
+  --color-palm-700: #0f766e;
+  --color-palm-600: #0d9488;
+  --color-palm-500: #14b8a6;
+  --color-palm-400: #2dd4bf;
+  --color-palm-300: #5eead4;
+  --color-palm-200: #99f6e4;
+  --color-palm-100: #ccfbf1;
+  --color-palm-50: #f0fdfa;
+  
+  --color-gold-900: #78350f;
+  --color-gold-800: #92400e;
+  --color-gold-700: #b45309;
+  --color-gold-600: #d97706;
+  --color-gold-500: #f59e0b;
+  --color-gold-400: #facc15;
+  --color-gold-300: #fde047;
+  --color-gold-200: #fef08a;
+  --color-gold-100: #fef9c3;
+  --color-gold-50: #fffbeb;
+  
+  --color-parchment: #fdfbf7;
+  --color-ink: #111827;
+}
+
+@layer base {
+  body {
+    @apply bg-parchment text-ink font-sans antialiased;
+  }
+  
+  h1, h2, h3 {
+    @apply font-serif leading-tight;
+  }
+}
+
+.hero-section {
+  @apply bg-palm-950 text-parchment relative overflow-hidden;
+}
+
+.glass-card {
+  @apply bg-white/95 backdrop-blur-md border border-palm-900/5 shadow-2xl rounded-[2.5rem];
+}
+
+.dark-card {
+  @apply bg-palm-950 text-parchment rounded-[2.5rem] border border-palm-800/20 shadow-2xl;
+}
+
+.btn-gold {
+  @apply bg-gold-500 text-white px-8 py-4 rounded-full font-display font-bold text-sm uppercase tracking-widest transition-all hover:bg-gold-600 hover:shadow-lg active:scale-95 flex items-center gap-2;
+}
+
+.btn-palm {
+  @apply bg-palm-900 text-parchment px-8 py-4 rounded-full font-display font-bold text-sm uppercase tracking-widest transition-all hover:bg-palm-800 active:scale-95 flex items-center gap-2;
+}
+
+.btn-outline-gold {
+  @apply border-2 border-gold-500 text-gold-600 px-8 py-4 rounded-full font-display font-bold text-sm uppercase tracking-widest transition-all hover:bg-gold-500 hover:text-white active:scale-95 flex items-center gap-2;
+}
+
+.status-badge {
+  @apply px-3 py-1 rounded-full text-[10px] font-display font-bold uppercase tracking-widest flex items-center gap-1.5;
+}
+
+.status-online {
+  @apply bg-emerald-100 text-emerald-700 border border-emerald-200;
+}
+
+.status-offline {
+  @apply bg-amber-100 text-amber-700 border border-amber-200;
+}
+
+@keyframes scan-line {
+  0% { top: 0%; opacity: 0; }
+  50% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+.animate-scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(to right, transparent, #d97706, transparent);
+  animation: scan-line 3s linear infinite;
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
+.map-container {
+  @apply bg-palm-100 rounded-3xl border-2 border-dashed border-palm-200 relative overflow-hidden;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
