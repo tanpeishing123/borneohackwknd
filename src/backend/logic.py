@@ -105,9 +105,14 @@ def init_database():
             status TEXT DEFAULT 'verified',
             risk TEXT DEFAULT 'Safe',
             crop_type TEXT DEFAULT 'Palm Oil',
+            source_plot TEXT,
             FOREIGN KEY(farmer_id) REFERENCES farmers(id_number)
         )
     ''')
+    cursor.execute("PRAGMA table_info(transactions)")
+    transaction_columns = {row[1] for row in cursor.fetchall()}
+    if 'source_plot' not in transaction_columns:
+        cursor.execute('ALTER TABLE transactions ADD COLUMN source_plot TEXT')
     
     # Audit requests table
     cursor.execute('''
@@ -329,10 +334,22 @@ def _extract_permit_area(ocr_text: str):
 
 def _extract_permit_number(ocr_text: str, permit_type: str):
     ptype = (permit_type or '').upper()
-    patterns = [
-        rf'\b{re.escape(ptype)}[-\s]?\d{{2,8}}(?:[-\s]?\d{{2,8}})*\b',
-        r'\b[A-Z]{2,10}-\d{2,8}(?:-\d{2,8})*\b',
-    ]
+    patterns = []
+
+    # Prefer extracting numbers that explicitly start with the selected permit type,
+    # e.g. MPOB-DLR-2026-002151.
+    if ptype:
+        patterns.extend([
+            rf'\b{re.escape(ptype)}(?:\s*[-–—]\s*[A-Z0-9]{{2,12}}){{1,5}}\b',
+            rf'\b{re.escape(ptype)}(?:\s*[-–—]\s*\d{{2,8}}){{1,5}}\b',
+        ])
+
+    # Generic fallback for uncommon license formats.
+    patterns.extend([
+        r'\b[A-Z]{2,10}(?:\s*[-–—]\s*[A-Z0-9]{2,12}){1,5}\b',
+        r'\b[A-Z]{2,10}(?:\s*[-–—]\s*\d{2,8}){1,5}\b',
+    ])
+
     for pattern in patterns:
         match = re.search(pattern, ocr_text, re.IGNORECASE)
         if match:
@@ -1248,8 +1265,8 @@ def save_transaction(tx_data: dict):
         
         cursor.execute('''
             INSERT OR REPLACE INTO transactions 
-            (id, farmer_id, farmer_name, weight, mode, location, timestamp, ffb_batch_url, farmer_signature_url, status, risk, crop_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, farmer_id, farmer_name, weight, mode, location, timestamp, ffb_batch_url, farmer_signature_url, status, risk, crop_type, source_plot)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             tx_data['id'],
             tx_data['farmerId'],
@@ -1262,7 +1279,8 @@ def save_transaction(tx_data: dict):
             tx_data.get('farmerSignatureUrl'),
             tx_data.get('status', 'verified'),
             tx_data.get('risk', 'Safe'),
-            tx_data.get('cropType', 'Palm Oil')
+            tx_data.get('cropType', 'Palm Oil'),
+            json.dumps(tx_data.get('sourcePlot')) if tx_data.get('sourcePlot') is not None else None
         ))
         
         conn.commit()
@@ -1283,7 +1301,7 @@ def get_all_transactions():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT id, farmer_id, farmer_name, weight, mode, location, timestamp, ffb_batch_url, farmer_signature_url, status, risk, crop_type
+            SELECT id, farmer_id, farmer_name, weight, mode, location, timestamp, ffb_batch_url, farmer_signature_url, status, risk, crop_type, source_plot
             FROM transactions
             ORDER BY timestamp DESC
         ''')
@@ -1293,6 +1311,7 @@ def get_all_transactions():
         transactions = []
         for row in rows:
             location = json.loads(row['location']) if row['location'] else {}
+            source_plot = json.loads(row['source_plot']) if row['source_plot'] else None
             transactions.append({
                 'id': row['id'],
                 'txId': row['id'],
@@ -1313,6 +1332,9 @@ def get_all_transactions():
                 'warning': row['risk'] not in (None, 'Safe', 'verified'),
                 'cropType': row['crop_type'],
                 'crop': row['crop_type'],
+                'sourcePlot': source_plot,
+                'sourcePlotId': source_plot.get('id') if isinstance(source_plot, dict) else None,
+                'sourcePlotName': source_plot.get('plotName') if isinstance(source_plot, dict) else None,
             })
         return {'success': True, 'transactions': transactions}
     except Exception as e:
@@ -1328,7 +1350,7 @@ def get_transactions_by_farmer(farmer_id: str):
         if farmer_id and '-' in farmer_id:
             farmer_display_id = f"F-{farmer_id[-6:]}"
         cursor.execute('''
-            SELECT id, farmer_id, farmer_name, weight, mode, location, timestamp, ffb_batch_url, farmer_signature_url, status, risk, crop_type
+            SELECT id, farmer_id, farmer_name, weight, mode, location, timestamp, ffb_batch_url, farmer_signature_url, status, risk, crop_type, source_plot
             FROM transactions
             WHERE farmer_id = ? OR farmer_id = ?
             ORDER BY timestamp DESC
@@ -1339,6 +1361,7 @@ def get_transactions_by_farmer(farmer_id: str):
         transactions = []
         for row in rows:
             location = json.loads(row['location']) if row['location'] else {}
+            source_plot = json.loads(row['source_plot']) if row['source_plot'] else None
             transactions.append({
                 'id': row['id'],
                 'txId': row['id'],
@@ -1357,6 +1380,9 @@ def get_transactions_by_farmer(farmer_id: str):
                 'warning': row['risk'] not in (None, 'Safe', 'verified'),
                 'cropType': row['crop_type'],
                 'reason': None,
+                'sourcePlot': source_plot,
+                'sourcePlotId': source_plot.get('id') if isinstance(source_plot, dict) else None,
+                'sourcePlotName': source_plot.get('plotName') if isinstance(source_plot, dict) else None,
             })
         return {'success': True, 'transactions': transactions}
     except Exception as e:

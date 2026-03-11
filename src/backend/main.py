@@ -51,6 +51,10 @@ class PlotSchema(BaseModel):
     geoQueryUsed: Optional[str] = None  # 使用的Nominatim查询
     userAdjusted: bool = False  # 用户是否手动调整过位置
     areaValidationStatus: Optional[str] = None  # green/yellow/red
+    plotName: Optional[str] = None
+    title: Optional[str] = None
+    permitLabel: Optional[str] = None
+    permitType: Optional[str] = None
     # EUDR 毁林风险检查字段
     eudrChecked: bool = False  # 是否已进行EUDR检查
     eudrRiskScore: Optional[float] = None  # 0-100 风险评分
