@@ -157,6 +157,9 @@ Before running the application, verify:
 
 ---
 
+## Resource
+__Demo Video and Report Link__:https://drive.google.com/drive/u/0/folders/1Bje1DI_3ZuZOQ4uxSTxMm20ktqQqqW0X
+
 ## 🕹️ How to Interact with the Prototype
 
 Veri facilitates a dual-role workflow: the __Farmer__(Onboarding & Plot Modeling) and the __Dealer__(Verification & Fraud Interception). Follow these steps to test the "Edge AI" and "GIS" logic.
