@@ -176,7 +176,8 @@ Before running the application, verify:
 > 
 ---
 
-__Demo Video and Report Link__:https://drive.google.com/drive/u/0/folders/1Bje1DI_3ZuZOQ4uxSTxMm20ktqQqqW0X
+### Demo Video and Report Link:
+https://drive.google.com/drive/folders/1Bje1DI_3ZuZOQ4uxSTxMm20ktqQqqW0X?usp=sharing
 
 ## 🕹️ How to Interact with the Prototype
 
