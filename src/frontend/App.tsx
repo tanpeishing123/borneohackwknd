@@ -45,6 +45,9 @@ import {
   Lock
 } from 'lucide-react';
 
+// @ts-ignore
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002';
+
 // --- Types ---
 type View = 'ROLE_SELECT' | 'farmer-registration' | 'DEALER_SIGNUP' | 'farmer-dashboard' | 'collector-dashboard' | 'collector-transaction' | 'manifest';
 
@@ -1025,7 +1028,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
       }
 
       // 后备策略：如果没有直接坐标，才调用 Nominatim 地理编码
-      const response = await fetch('http://localhost:8002/geo/resolve-land-title', {
+      const response = await fetch(`${API_BASE_URL}/geo/resolve-land-title`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1128,7 +1131,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
         setIsScanning(true);
         const icUpload = new FormData();
         icUpload.append('file', file);
-        fetch('http://localhost:8002/extract/ic', {
+        fetch(`${API_BASE_URL}/extract/ic`, {
           method: 'POST',
           body: icUpload
         })
@@ -1175,7 +1178,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
         const titleFormData = new FormData();
         titleFormData.append('file', file);
         
-        fetch('http://localhost:8002/extract/land-title', {
+        fetch(`${API_BASE_URL}/extract/land-title`, {
           method: 'POST',
           body: titleFormData
         })
@@ -1241,7 +1244,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
           setIsScanning(true);
           const permitUpload = new FormData();
           permitUpload.append('file', file);
-          fetch(`http://localhost:8002/extract/permit/${type}`, {
+          fetch(`${API_BASE_URL}/extract/permit/${type}`, {
             method: 'POST',
             body: permitUpload
           })
@@ -2761,7 +2764,7 @@ const DDSReport = ({ data, type, onClose }: { data: any, type: 'individual' | 'c
           items: data.items || []
         };
 
-        const response = await fetch('http://localhost:8002/lorry/manifest', {
+        const response = await fetch(`${API_BASE_URL}/lorry/manifest`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(manifestData)
@@ -2771,7 +2774,7 @@ const DDSReport = ({ data, type, onClose }: { data: any, type: 'individual' | 'c
         if (result.status === 'success') {
           // Download the PDF
           const manifestId = manifestData.id;
-          window.open(`http://localhost:8002/lorry/report/${manifestId}`, '_blank');
+          window.open(`${API_BASE_URL}/lorry/report/${manifestId}`, '_blank');
         } else {
           alert('Failed to generate manifest PDF');
         }
@@ -3139,7 +3142,7 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
         const uploadData = new FormData();
         uploadData.append('file', file);
 
-        const response = await fetch(`http://localhost:8002/extract/permit/${type}`, {
+        const response = await fetch(`${API_BASE_URL}/extract/permit/${type}`, {
           method: 'POST',
           body: uploadData
         });
@@ -3543,7 +3546,7 @@ const FarmerDashboard = ({ onLogout, plots, isOnline, offlineCacheCount, isSynci
   const loadFarmerHistory = (farmerId?: string) => {
     if (!farmerId) return;
     const fallbackDisplayId = farmerId.includes('-') ? `F-${farmerId.slice(-6)}` : farmerId;
-    fetch(`http://localhost:8002/farmer/${farmerId}/transactions`)
+    fetch(`${API_BASE_URL}/farmer/${farmerId}/transactions`)
       .then(async (response) => {
         if (!response.ok) throw new Error('Failed to fetch farmer transaction history');
         return response.json();
@@ -3555,7 +3558,7 @@ const FarmerDashboard = ({ onLogout, plots, isOnline, offlineCacheCount, isSynci
         }
 
         if (fallbackDisplayId !== farmerId) {
-          return fetch(`http://localhost:8002/farmer/${fallbackDisplayId}/transactions`)
+          return fetch(`${API_BASE_URL}/farmer/${fallbackDisplayId}/transactions`)
             .then(async (retryResponse) => {
               if (!retryResponse.ok) throw new Error('Retry farmer history fetch failed');
               return retryResponse.json();
@@ -3996,7 +3999,7 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
 
   const handleRequestAudit = async (id: string) => {
     try {
-      const response = await fetch('http://localhost:8002/transaction/audit', {
+      const response = await fetch(`${API_BASE_URL}/transaction/audit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transactionId: id, requestedBy: 'dealer-dashboard' })
@@ -4037,7 +4040,7 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
         };
       });
 
-      let response = await fetch('http://localhost:8002/transactions/sync', {
+      let response = await fetch(`${API_BASE_URL}/transactions/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transactions: offlineTransactions })
@@ -4045,7 +4048,7 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
 
       // Fallback for backend versions exposing singular path.
       if (response.status === 404) {
-        response = await fetch('http://localhost:8002/transaction/sync', {
+        response = await fetch(`${API_BASE_URL}/transaction/sync`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ transactions: offlineTransactions })
@@ -5112,7 +5115,7 @@ const TransactionFlow = ({ onComplete, isOnline, onOfflineTransaction }: { onCom
     };
 
     try {
-      const response = await fetch('http://localhost:8002/transaction/save', {
+      const response = await fetch(`${API_BASE_URL}/transaction/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(transaction)
@@ -5860,7 +5863,7 @@ export default function App() {
     };
 
     try {
-      const response = await fetch('http://localhost:8002/farmer/register', {
+      const response = await fetch(`${API_BASE_URL}/farmer/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(farmerData)
@@ -5871,7 +5874,7 @@ export default function App() {
       if (result.status === 'success') {
         // Demo reset behavior: new registration starts with empty transaction history.
         try {
-          await fetch(`http://localhost:8002/farmer/${formData.idNumber}/transactions/clear`, {
+          await fetch(`${API_BASE_URL}/farmer/${formData.idNumber}/transactions/clear`, {
             method: 'POST'
           });
         } catch (clearErr) {
@@ -5930,7 +5933,7 @@ export default function App() {
     };
 
     try {
-      const response = await fetch('http://localhost:8002/dealer/register', {
+      const response = await fetch(`${API_BASE_URL}/dealer/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dealerData)
