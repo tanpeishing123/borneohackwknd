@@ -155,6 +155,27 @@ Before running the application, verify:
 ---
 
 ## Resource
+### 🚀 Live Demo & Testing Guide
+
+**[👉 Click to View Live Prototype](https://borneohackwknd.vercel.app)**
+
+#### ⚡ Note for Judges
+* **Server Wake-up:** Our backend is hosted on Render (Free Tier). If the site has been inactive, the first request may take **30-60 seconds** to wake up. We appreciate your patience!
+* **Demo Assets:** To ensure 100% accuracy with our **Dockerized Tesseract OCR**, please use the images provided in our **[Demo IC Samples](./demo_assets)**. These match the document types our AI is optimized for.
+
+---
+
+#### 🔄 Full Testing Loop
+1. **Farmer Side:** Complete registration and IC validation to generate your **Unique Farmer QR Code**.
+2. **Save & Prepare:** **Download or save** the generated QR code image to your device.
+3. **Dealer Side:** Switch to the **Dealer Scanner**. 
+    * *Note: Please **allow camera/file permissions** if prompted; use the **exact license number** from our demo assets.*
+4. **Verification:** Upload the saved QR code to the scanner to verify compliance and access transaction history.
+
+> **⚠️ Smooth Navigation:** After Dealer Registration, please **wait a few moments** for the dashboard redirect. **Do not refresh**; the system will grant access once the backend confirmation is complete.
+> 
+---
+
 __Demo Video and Report Link__:https://drive.google.com/drive/u/0/folders/1Bje1DI_3ZuZOQ4uxSTxMm20ktqQqqW0X
 
 ## 🕹️ How to Interact with the Prototype
