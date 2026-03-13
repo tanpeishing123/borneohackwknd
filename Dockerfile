@@ -19,4 +19,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 运行你的 FastAPI 项目 (确保端口和 main.py 路径对齐)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000"]
+# 指向子文件夹里的 main.py
+CMD ["uvicorn", "src.backend.main:app", "--host", "0.0.0.0", "--port", "10000"]
