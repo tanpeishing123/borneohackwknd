@@ -67,71 +67,74 @@ const Navbar = ({ onHome, onBack, isOnline, showBack, onLogout, showLogout, onTo
   const [showMenu, setShowMenu] = useState(false);
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 px-6 py-4 flex justify-between items-center bg-parchment/80 backdrop-blur-md border-b border-palm-900/5">
-      <div className="flex items-center gap-4">
-        {showBack && onBack && (
-          <button 
-            onClick={onBack}
-            className="w-10 h-10 rounded-xl bg-palm-100 flex items-center justify-center text-palm-950 hover:bg-gold-500 hover:text-white transition-all shadow-sm"
+    <nav className="z-50 pt-8 pb-4 px-6 sm:px-8">
+      <div className="flex justify-between items-center">
+        <div className="flex items-center gap-4">
+          {showBack && onBack && (
+            <button 
+              onClick={onBack}
+              className="w-10 h-10 rounded-2xl bg-white/50 backdrop-blur-sm flex items-center justify-center text-palm-950 hover:bg-white transition-all shadow-sm ring-1 ring-black/5"
+            >
+              <ChevronLeft size={20} />
+            </button>
+          )}
+          <div 
+            className="flex items-center gap-3 cursor-pointer group" 
+            onClick={onHome}
           >
-            <ChevronLeft size={20} />
-          </button>
-        )}
-        <div 
-          className="flex items-center gap-3 cursor-pointer group" 
-          onClick={onHome}
-        >
-          <div className="w-10 h-10 bg-palm-950 rounded-xl flex items-center justify-center text-gold-400 group-hover:bg-palm-900 transition-colors shadow-lg">
-            <ShieldCheck size={24} />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-xl font-display font-bold text-palm-950 tracking-tighter leading-none uppercase">Veri</span>
-            <span className="text-[10px] font-display font-bold text-palm-700 tracking-widest uppercase">EUDR Shield</span>
+            <div className="w-12 h-12 bg-palm-950 rounded-[1.25rem] flex items-center justify-center text-gold-400 group-hover:bg-palm-900 transition-all shadow-lg hover:rotate-3">
+              <ShieldCheck size={28} />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-2xl font-display font-black text-palm-950 tracking-tighter leading-none uppercase">Veri</span>
+              <span className="text-[10px] font-display font-bold text-palm-700/60 tracking-widest uppercase">EUDR Shield</span>
+            </div>
           </div>
         </div>
-      </div>
-      <div className="flex items-center gap-4 relative">
-        <button 
-          onClick={onToggleOnline}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all ${isOnline ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}
-        >
-          <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-          {isOnline ? '📡 ONLINE' : '💾 OFFLINE'}
-        </button>
-        <button 
-          onClick={() => setShowMenu(!showMenu)}
-          className="p-2 text-palm-900 hover:bg-palm-100 rounded-full transition-colors"
-        >
-          <Menu size={24} />
-        </button>
+        <div className="flex items-center gap-3 relative">
+          <button 
+            onClick={onToggleOnline}
+            className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ring-1 ${isOnline ? 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/20' : 'bg-amber-500/10 text-amber-600 ring-amber-500/20 hover:bg-amber-500/20'}`}
+          >
+            <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500'}`} />
+            <span className="hidden sm:inline">{isOnline ? 'ONLINE' : 'OFFLINE'}</span>
+          </button>
+          
+          <button 
+            onClick={() => setShowMenu(!showMenu)}
+            className="w-10 h-10 flex items-center justify-center text-palm-900 bg-white/50 backdrop-blur-sm rounded-2xl hover:bg-white transition-all shadow-sm ring-1 ring-black/5"
+          >
+            <Menu size={24} />
+          </button>
 
-        <AnimatePresence>
-          {showMenu && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="absolute top-full right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-palm-100 overflow-hidden z-[100]"
-            >
-              <div className="p-2">
-                {showLogout && onLogout && (
-                  <button 
-                    onClick={() => { onLogout(); setShowMenu(false); }}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors text-left"
-                  >
-                    <LogOut size={18} /> Logout
-                  </button>
-                )}
-                <button 
-                  onClick={() => setShowMenu(false)}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-palm-600 hover:bg-palm-50 rounded-xl transition-colors text-left"
-                >
-                  <Info size={18} /> Help & Support
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+          <AnimatePresence>
+            {showMenu && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                className="absolute top-full right-0 mt-3 w-56 bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-2xl ring-1 ring-black/5 overflow-hidden z-[100]"
+              >
+                <div className="p-3">
+                  <div className="px-4 py-3 mb-2 border-b border-gray-50">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Account</p>
+                  </div>
+                  {showLogout && onLogout && (
+                    <button 
+                      onClick={() => { onLogout(); setShowMenu(false); }}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-50 rounded-2xl transition-colors text-left"
+                    >
+                      <div className="w-8 h-8 rounded-xl bg-red-100 flex items-center justify-center">
+                        <LogOut size={16} />
+                      </div>
+                      Logout
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </nav>
   );
@@ -142,87 +145,84 @@ const Home = ({ onSelectRole }: { onSelectRole: (role: 'farmer' | 'collector') =
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
     exit={{ opacity: 0, y: -20 }}
-    className="min-h-screen pt-32 pb-20 px-6 max-w-7xl mx-auto flex flex-col gap-20"
+    className="py-12 px-6 flex flex-col gap-10"
   >
-    <div className="flex flex-col justify-center">
-      <div className="max-w-4xl mb-12">
+    <div className="flex flex-col">
+      <div className="mb-8">
         <motion.div
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-palm-100 text-palm-900 text-[10px] font-display font-bold uppercase tracking-widest mb-6 border border-palm-200"
+          className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[9px] font-bold uppercase tracking-widest mb-4 border border-emerald-100"
         >
-          <ShieldCheck size={14} className="text-gold-600" />
-          <span>Next-Gen Agri-Traceability</span>
+          <ShieldCheck size={12} className="text-emerald-600" />
+          <span>EUDR COMPLIANCE READY</span>
         </motion.div>
-        <h1 className="text-6xl md:text-8xl font-serif font-bold text-palm-950 mb-6 leading-[0.85] tracking-tighter">
-          Rooted in <br />
-          <span className="italic text-gold-600">Compliance.</span>
+        <h1 className="text-4xl font-serif font-black text-palm-950 mb-3 leading-tight tracking-tight">
+          Rooted in <span className="text-emerald-600 italic">compliance.</span>
         </h1>
-        <p className="text-lg md:text-xl text-palm-800 font-light leading-relaxed max-w-2xl">
-          Veri ensures every harvest meets the highest EUDR standards with unbreakable digital links.
+        <p className="text-sm text-palm-700 font-medium leading-relaxed opacity-80">
+          Verify every harvest with unbreakable digital links.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl w-full">
+      <div className="flex flex-col gap-6 w-full">
         <motion.button 
-          whileHover={{ y: -8, scale: 1.02 }}
+          whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => onSelectRole('farmer')}
-          className="group relative overflow-hidden glass-card p-12 text-left border-2 border-transparent hover:border-gold-500/30 transition-all"
+          className="group relative flex items-center p-6 bg-[#F9FAFB] rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-md transition-all text-left overflow-hidden"
         >
-          <div className="relative z-10">
-            <div className="w-16 h-16 rounded-2xl bg-gold-100 text-gold-600 flex items-center justify-center mb-8 group-hover:bg-gold-500 group-hover:text-white transition-colors">
-              <User size={32} />
-            </div>
-            <h3 className="text-4xl font-serif font-bold text-palm-950 mb-4">I am a Farmer</h3>
-            <p className="text-palm-600 font-light mb-8 text-lg">Register land and verify your harvest for global markets.</p>
-            <div className="flex items-center gap-2 text-gold-600 font-display font-bold uppercase tracking-widest text-xs">
-              Enter Portal <ArrowRight size={16} className="group-hover:translate-x-2 transition-transform" />
-            </div>
+          <div className="flex-shrink-0 w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center mr-6">
+            <User size={32} className="text-amber-500 fill-amber-500/10" />
           </div>
-          <div className="absolute -bottom-12 -right-12 w-64 h-64 bg-gold-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
+          <div className="flex-1">
+            <h3 className="text-xl font-semibold text-[#064e3b] mb-1">I am a Farmer</h3>
+            <p className="text-xs text-gray-500 font-medium leading-tight">Register land & verify harvest</p>
+          </div>
+          <div className="absolute bottom-6 right-6">
+            <ArrowRight size={18} className="text-[#064e3b]/30 group-hover:text-[#064e3b] group-hover:translate-x-1 transition-all" />
+          </div>
         </motion.button>
 
         <motion.button 
-          whileHover={{ y: -8, scale: 1.02 }}
+          whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => onSelectRole('collector')}
-          className="group relative overflow-hidden dark-card p-12 text-left border-2 border-transparent hover:border-palm-400/30 transition-all"
+          className="group relative flex items-center p-6 bg-[#064e3b] rounded-[2.5rem] shadow-xl hover:shadow-2xl transition-all text-left overflow-hidden"
         >
-          <div className="relative z-10">
-            <div className="w-16 h-16 rounded-2xl bg-palm-800 text-palm-200 flex items-center justify-center mb-8 group-hover:bg-palm-400 group-hover:text-palm-950 transition-colors">
-              <Truck size={32} />
-            </div>
-            <h3 className="text-4xl font-serif font-bold text-parchment mb-4">I am a Dealer</h3>
-            <p className="text-parchment/60 font-light mb-8 text-lg">Verify identities and manage compliance in real-time.</p>
-            <div className="flex items-center gap-2 text-gold-400 font-display font-bold uppercase tracking-widest text-xs">
-              Enter Portal <ArrowRight size={16} className="group-hover:translate-x-2 transition-transform" />
-            </div>
+          <div className="flex-shrink-0 w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center mr-6 border border-white/5">
+            <Truck size={32} className="text-white" />
           </div>
-          <div className="absolute -bottom-12 -right-12 w-64 h-64 bg-palm-900/50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
+          <div className="flex-1">
+            <h3 className="text-xl font-semibold text-white mb-1">I am a Dealer</h3>
+            <p className="text-xs text-white/70 font-medium leading-tight">Verify identities & manage compliance</p>
+          </div>
+          <div className="absolute bottom-6 right-6">
+            <ArrowRight size={18} className="text-white/40 group-hover:text-white group-hover:translate-x-1 transition-all" />
+          </div>
         </motion.button>
       </div>
     </div>
 
-    {/* Feature Cards Grid */}
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+    {/* Minimalist 2x2 Feature Grid */}
+    <div className="grid grid-cols-2 gap-4">
       {[
-        { label: 'Offline First', icon: WifiOff, desc: 'Works in remote plantations without signal.' },
-        { label: 'Digital Vault', icon: FileText, desc: 'Unbreakable blockchain-backed records.' },
-        { label: 'GIS Guard', icon: MapPin, desc: 'Real-time plot boundary verification.' },
-        { label: 'DDS Ready', icon: ShieldCheck, desc: 'Automated Due Diligence Statements.' },
+        { label: 'Offline First', icon: WifiOff },
+        { label: 'Digital Vault', icon: FileText },
+        { label: 'GIS Guard', icon: MapPin },
+        { label: 'DDS Ready', icon: ShieldCheck },
       ].map((feat, i) => (
-        <div key={i} className="glass-card p-8 hover:bg-palm-50 transition-colors group">
-          <div className="w-12 h-12 bg-palm-100 rounded-xl flex items-center justify-center text-palm-900 mb-6 group-hover:bg-gold-500 group-hover:text-white transition-all">
-            <feat.icon size={24} />
+        <div key={i} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-md flex flex-col items-center justify-center gap-3 hover:shadow-lg transition-all text-center">
+          <div className="text-emerald-700 bg-emerald-50 w-10 h-10 rounded-full flex items-center justify-center shadow-inner">
+            <feat.icon size={20} strokeWidth={2.5} />
           </div>
-          <h4 className="font-serif font-bold text-xl text-palm-950 mb-2">{feat.label}</h4>
-          <p className="text-sm text-palm-600 font-light">{feat.desc}</p>
+          <span className="text-[11px] font-bold text-gray-700 tracking-wide uppercase">{feat.label}</span>
         </div>
       ))}
     </div>
   </motion.div>
 );
+
 
 const PERMIT_LIBRARY = [
   { id: 'MPOB', label: 'MPOB (Palm Oil)' },
@@ -1467,9 +1467,9 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.98 }}
-      className="min-h-screen pt-32 pb-32 px-6 max-w-3xl mx-auto"
+      className="min-h-screen pt-6 pb-20 px-6 max-w-3xl mx-auto"
     >
-      <div className="flex items-center gap-4 mb-12">
+      <div className="flex items-center gap-4 mb-6">
         {[1, 2, 3].map((s) => (
           <div key={s} className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-display font-bold text-sm ${step >= s ? 'bg-gold-500 text-white shadow-lg shadow-gold-500/20' : 'bg-palm-100 text-palm-400'}`}>
@@ -1483,7 +1483,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
         </div>
       </div>
 
-      <div className="glass-card p-10 relative overflow-hidden">
+      <div className="glass-card p-6 md:p-8 relative overflow-hidden">
         {isScanning && (
           <div className="absolute inset-0 z-50 bg-palm-950/40 backdrop-blur-sm flex flex-col items-center justify-center text-white">
             <div className="w-64 h-64 border-2 border-gold-400 rounded-3xl relative overflow-hidden mb-6">
@@ -2406,7 +2406,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
         )}
 
         {step === 3 && (
-          <div className="space-y-12 relative overflow-hidden">
+          <div className="space-y-8 relative overflow-hidden">
             {isGenerating && (
               <div className="absolute inset-0 z-50 bg-palm-950/40 backdrop-blur-sm flex flex-col items-center justify-center text-white">
                 <div className="w-64 h-64 border-2 border-gold-400 rounded-3xl relative overflow-hidden mb-6">
@@ -2530,14 +2530,14 @@ const DDS_Template = ({ item, idx, isConsolidated = false }: { item: any, idx: n
   const producerId = item.idNumber || item.farmerId || item.ic || item.id || '780512-06-5543';
 
   return (
-    <div className={`w-full bg-white shadow-2xl p-12 md:p-16 border-t-8 border-orange-500 relative overflow-hidden ring-1 ring-slate-200 print:shadow-none print:border-t-8 print:ring-0 ${isConsolidated ? 'mb-8 print:mb-0 print:break-before-page' : ''}`}>
+    <div className={`w-full bg-white shadow-2xl p-6 sm:p-12 md:p-16 border-t-8 border-orange-500 relative overflow-hidden ring-1 ring-slate-200 print:shadow-none print:border-t-8 print:ring-0 ${isConsolidated ? 'mb-8 print:mb-0 print:break-before-page' : ''}`}>
       {/* 背景防伪水印 */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.03] -rotate-12 pointer-events-none">
         <ShieldCheck size={400} />
       </div>
 
       {/* 页眉部分 */}
-      <header className="flex justify-between items-start border-b border-slate-100 pb-8 mb-8 relative z-10">
+      <header className="flex justify-between items-start border-b border-slate-100 pb-8 mb-8 relative z-10 gap-4">
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-[#064e3b]">
             <ShieldCheck size={32} strokeWidth={2.5} />
@@ -2547,16 +2547,16 @@ const DDS_Template = ({ item, idx, isConsolidated = false }: { item: any, idx: n
             {isConsolidated ? `Producer Compliance Certificate (Part ${idx + 1})` : 'Single Producer Compliance Certificate'}
           </p>
         </div>
-        <div className="text-right">
-          <p className="text-xs font-bold text-slate-400 uppercase">Statement ID</p>
-          <p className="text-sm font-mono font-black text-[#064e3b] tracking-tight">
+        <div className="text-right shrink-0">
+          <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase">Statement ID</p>
+          <p className="text-xs sm:text-sm font-mono font-black text-[#064e3b] tracking-tight whitespace-nowrap break-keep">
             V-IND-{item.id || '00921'}-{idx + 1}
           </p>
         </div>
       </header>
 
       {/* 身份与状态部分 */}
-      <section className="grid grid-cols-2 gap-10 mb-12 relative z-10">
+      <section className="flex flex-col md:grid md:grid-cols-2 gap-6 md:gap-10 mb-12 relative z-10">
         <div className="space-y-6">
           <div>
             <h4 className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-2">Producer Identity</h4>
@@ -2574,10 +2574,10 @@ const DDS_Template = ({ item, idx, isConsolidated = false }: { item: any, idx: n
           </div>
         </div>
         <div className="flex flex-col justify-start">
-           <div className="p-6 rounded-3xl border shadow-sm bg-green-50 border-green-100">
+           <div className="p-6 rounded-3xl border shadow-sm bg-green-50 border-green-100 w-full">
               <h4 className="text-[9px] font-black uppercase tracking-widest mb-2 text-green-600">EUDR Compliance Status</h4>
               <div className="flex items-center gap-3">
-                 <span className="font-black italic uppercase tracking-tighter text-xl text-green-900">EUDR Safe</span>
+                 <span className="font-black italic uppercase tracking-tighter text-sm whitespace-nowrap text-green-900">Negligible Risk</span>
               </div>
               {item.eudrRiskScore != null && (
                 <p className="text-[10px] font-bold mt-2 text-slate-600">Risk Score: {item.eudrRiskScore.toFixed(0)}/100</p>
@@ -2592,7 +2592,7 @@ const DDS_Template = ({ item, idx, isConsolidated = false }: { item: any, idx: n
           <MapPin size={20} className="text-[#064e3b]" />
           <h3 className="font-black text-[#064e3b] uppercase text-sm tracking-tight">Verified Plot Specifications (Article 9)</h3>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-y-8 gap-x-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-8 gap-x-6">
           <div className="space-y-1">
             <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Plot Alias</span>
             <p className="text-xs font-bold text-slate-700">{item.plotName || ''}</p>
@@ -2981,7 +2981,7 @@ const DDSReport = ({ data, type, onClose }: { data: any, type: 'individual' | 'c
       className="fixed inset-0 z-[200] bg-slate-900/90 backdrop-blur-md flex flex-col items-center p-4 md:p-8 overflow-y-auto"
     >
       {/* 操作栏 (Action Bar) */}
-      <div className="w-full max-w-5xl flex justify-between items-center mb-8 sticky top-0 z-[210] bg-slate-900/80 p-4 rounded-2xl backdrop-blur-sm border border-white/10 print:hidden">
+      <div className="w-full max-w-3xl flex justify-between items-center mb-8 bg-slate-900/90 p-4 rounded-3xl backdrop-blur-md border border-white/10 print:hidden sticky top-0 z-50 shadow-2xl">
         <div className="flex items-center gap-3">
            <div className="bg-[#064e3b] p-2 rounded-xl text-white shadow-lg shadow-[#064e3b]/20">
               <ShieldCheck size={24} />
@@ -3006,7 +3006,7 @@ const DDSReport = ({ data, type, onClose }: { data: any, type: 'individual' | 'c
         </div>
       </div>
 
-      <div ref={reportRef} className="w-full max-w-5xl space-y-8 print:space-y-0 print:m-0 print:p-0">
+      <div ref={reportRef} className="w-full max-w-3xl space-y-8 print:space-y-0 print:m-0 print:p-0">
         {type === 'consolidated' ? (
           <>
             <ConsolidatedTemplate data={data} />
@@ -3243,7 +3243,7 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
       <motion.div 
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="min-h-screen pt-32 pb-20 px-6 max-w-2xl mx-auto text-center"
+        className="min-h-screen pt-32 pb-20 px-6 max-w-3xl mx-auto text-center"
       >
         <div className="glass-card p-12 flex flex-col items-center gap-8">
           <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shadow-inner">
@@ -3255,7 +3255,7 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
           </div>
           <button 
             onClick={() => onComplete(formData)}
-            className="w-full py-5 bg-palm-900 text-gold-400 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-palm-800 transition-all shadow-xl flex items-center justify-center gap-3"
+            className="w-full min-h-[56px] py-5 bg-[#0A3D2C] text-gold-400 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-[#072d21] transition-all shadow-xl flex items-center justify-center gap-3"
           >
             Go to Dashboard <ArrowRight size={20} />
           </button>
@@ -3322,7 +3322,7 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
             <button 
               onClick={nextStep}
               disabled={!formData.repName || formData.mobile.length < 10}
-              className="w-full py-5 bg-palm-900 text-gold-400 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-palm-800 transition-all shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full min-h-[56px] py-5 bg-[#0A3D2C] text-gold-400 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-[#072d21] transition-all shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Continue to Business Info
             </button>
@@ -3409,10 +3409,10 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
               </div>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <button 
                 onClick={prevStep}
-                className="w-1/3 py-5 bg-palm-100 text-palm-950 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-palm-200 transition-all"
+                className="w-full sm:w-1/3 py-5 bg-palm-100 text-palm-950 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-palm-200 transition-all"
               >
                 Back
               </button>
@@ -3424,7 +3424,7 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
                   formData.licenseTypes.some(t => !formData.licenseNumbers[t] || formData.licenseNumbers[t].trim() === '') ||
                   (formData.licenseTypes.includes('OTHER') && !formData.customLicenseNames['OTHER'])
                 }
-                className="flex-1 py-5 bg-palm-900 text-gold-400 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-palm-800 transition-all shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full sm:flex-1 py-5 bg-[#0A3D2C] text-gold-400 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-[#072d21] transition-all shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Continue to Verification
               </button>
@@ -3440,7 +3440,7 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
             </div>
 
             <div className="space-y-6">
-              <div className="p-6 bg-palm-50 rounded-3xl border border-palm-100 flex items-center gap-6">
+              <div className="w-full p-6 bg-palm-50 rounded-3xl border border-palm-100 flex items-center gap-6">
                 <div className="w-12 h-12 bg-palm-900 rounded-2xl flex items-center justify-center text-gold-400 shadow-lg">
                   <MapPin size={24} />
                 </div>
@@ -3510,10 +3510,10 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
               </div>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <button 
                 onClick={prevStep}
-                className="w-1/3 py-5 bg-palm-100 text-palm-950 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-palm-200 transition-all"
+                className="w-full sm:w-1/3 py-5 bg-palm-100 text-palm-950 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-palm-200 transition-all"
               >
                 Back
               </button>
@@ -3523,7 +3523,7 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
                   formData.licenseTypes.some(type => !formData.licensePhotos[type]) ||
                   formData.licenseTypes.some(type => licenseValidation[type]?.status === 'error')
                 }
-                className="flex-1 py-5 bg-palm-900 text-gold-400 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-palm-800 transition-all shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full sm:flex-1 py-5 bg-[#0A3D2C] text-gold-400 rounded-2xl font-display font-bold uppercase tracking-widest hover:bg-[#072d21] transition-all shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Complete Registration
               </button>
@@ -3658,7 +3658,7 @@ const FarmerDashboard = ({ onLogout, plots, isOnline, offlineCacheCount, isSynci
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="min-h-screen pt-32 pb-20 px-6 max-w-2xl mx-auto"
+      className="pb-20 px-6"
     >
       {isSyncing && (
         <motion.div 
@@ -3683,7 +3683,7 @@ const FarmerDashboard = ({ onLogout, plots, isOnline, offlineCacheCount, isSynci
         </motion.div>
       )}
 
-      {!isOnline && offlineCacheCount && offlineCacheCount > 0 && (
+      {!isOnline && offlineCacheCount > 0 && (
         <div className="mb-6 p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center gap-4">
           <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center text-white shrink-0">
             <WifiOff size={20} />
@@ -3972,6 +3972,7 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
   const [showDDS, setShowDDS] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
 
   const toggleSelection = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -4080,7 +4081,7 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="min-h-screen pt-32 pb-20 px-6 max-w-7xl mx-auto"
+      className="pb-20 px-6"
     >
       {(isGlobalSyncing || isSyncing) && (
         <motion.div 
@@ -4108,7 +4109,7 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
         </motion.div>
       )}
 
-      {!isOnline && offlineCacheCount && offlineCacheCount > 0 && (
+      {!isOnline && offlineCacheCount > 0 && (
         <div className="mb-8 p-5 bg-amber-50 rounded-3xl border border-amber-100 flex items-center gap-6">
           <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-lg shadow-amber-500/20">
             <WifiOff size={24} />
@@ -4212,31 +4213,59 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
                   )}
                 </div>
 
-                <div className="flex gap-4 pt-4">
+              <div className="flex gap-4 pt-4 sm:flex-row flex-col">
+                <button 
+                  onClick={() => setShowDDS(true)}
+                  className="flex-[2] py-3 rounded-2xl bg-palm-950 text-white font-display font-bold uppercase tracking-widest text-[9px] shadow-lg flex items-center justify-center gap-2"
+                >
+                  <FileText size={14} /> View DDS Report
+                </button>
+                {selectedTx.warning && (
                   <button 
-                    onClick={() => setShowDDS(true)}
-                    className="flex-[2] py-4 rounded-2xl bg-palm-950 text-white font-display font-bold uppercase tracking-widest text-[10px] shadow-lg flex items-center justify-center gap-2"
+                    onClick={() => handleRequestAudit(selectedTx.txId || selectedTx.id)}
+                    className="flex-1 py-3 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-display font-bold uppercase tracking-widest text-[9px] shadow-lg shadow-red-600/20 transition-all"
+                    title="Submit this flagged transaction for immediate auditor review"
                   >
-                    <FileText size={16} /> View DDS Report
+                    🔍 Request Audit
                   </button>
-                  {selectedTx.warning && (
-                    <button 
-                      onClick={() => handleRequestAudit(selectedTx.txId || selectedTx.id)}
-                      className="flex-1 py-4 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-display font-bold uppercase tracking-widest text-[10px] shadow-lg shadow-red-600/20 transition-all"
-                      title="Submit this flagged transaction for immediate auditor review"
-                    >
-                      🔍 Request Audit
-                    </button>
-                  )}
-                </div>
+                )}
+              </div>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 mb-12">
+      <AnimatePresence>
+        {evidencePreview && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEvidencePreview(null)}
+              className="absolute inset-0 bg-palm-950/90 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-2xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl"
+            >
+              <div className="p-4 border-b border-palm-100 flex justify-between items-center bg-palm-50/50">
+                <span className="text-[10px] font-display font-bold uppercase tracking-widest text-palm-500">Evidence Preview</span>
+                <button onClick={() => setEvidencePreview(null)} className="p-2 text-palm-400 hover:text-palm-950"><X size={20}/></button>
+              </div>
+              <div className="p-2">
+                <img src={evidencePreview} alt="Evidence" className="w-full h-auto rounded-2xl" />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
         <div>
-          <h2 className="text-5xl font-serif font-bold text-palm-950 mb-2">Dealer Verification Hub</h2>
+          <h2 className="text-3xl font-serif font-bold text-palm-950 mb-2">Dealer Verification Hub</h2>
           <p className="text-palm-600 font-light flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full animate-pulse ${isOnline ? 'bg-emerald-500' : 'bg-amber-500'}`} />
             Active Session: Station 01 • {pendingSyncs} Pending Sync
@@ -4280,52 +4309,58 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
           whileHover={{ y: -4, scale: 1.01 }}
           whileTap={{ scale: 0.98 }}
           onClick={onNewTransaction}
-          className="w-full py-12 rounded-3xl bg-gold-500 text-palm-950 flex flex-col items-center justify-center gap-6 shadow-xl shadow-gold-500/20 border-2 border-white/20 group relative overflow-hidden"
+          className="w-full py-8 rounded-3xl bg-gold-500 text-palm-950 flex flex-col items-center justify-center gap-4 shadow-xl shadow-gold-500/20 border-2 border-white/20 group relative overflow-hidden"
         >
           <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="w-20 h-20 rounded-2xl bg-palm-950 text-gold-400 flex items-center justify-center shadow-lg relative z-10">
-            <QrCode size={40} />
+          <div className="w-16 h-16 rounded-2xl bg-palm-950 text-gold-400 flex items-center justify-center shadow-lg relative z-10">
+            <QrCode size={32} />
           </div>
           <div className="text-center relative z-10">
-            <h3 className="text-3xl font-serif font-bold mb-1">Scan Farmer QR</h3>
-            <p className="text-palm-900/60 font-display font-bold uppercase tracking-widest text-[10px]">Tap to Begin Verification</p>
+            <h3 className="text-2xl font-serif font-bold mb-1">Scan Farmer QR</h3>
+            <p className="text-palm-900/60 font-display font-bold uppercase tracking-widest text-[8px]">Tap to Begin Verification</p>
           </div>
         </motion.button>
       </div>
 
       <div className="space-y-16">
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
-          <div className="dark-card p-8 relative overflow-hidden">
-            <div className="relative z-10">
-              <p className="text-[10px] font-display font-bold uppercase tracking-widest text-parchment/40 mb-4">Today's Tonnage</p>
-              <h3 className="text-5xl font-serif font-bold text-gold-400 mb-2">42.8 <span className="text-xl text-parchment/60 font-light">MT</span></h3>
-              <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
-                <ArrowRight size={14} className="-rotate-45" /> +12% from yesterday
-              </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
+          <div className="group relative flex items-center p-6 bg-[#064e3b] rounded-[2.5rem] shadow-xl hover:shadow-2xl transition-all text-left overflow-hidden border border-white/5">
+            <div className="flex-shrink-0 w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center mr-4 border border-white/5">
+              <Truck size={24} className="text-white" />
             </div>
-            <BarChart3 size={120} className="absolute -bottom-4 -right-4 text-parchment/5" />
+            <div className="flex-1">
+              <p className="text-[9px] font-display font-bold uppercase tracking-[0.2em] text-white/50 mb-0.5">Tonnage</p>
+              <h3 className="text-xl font-serif font-bold text-white leading-none">42.8 <span className="text-[10px] font-light opacity-60 uppercase">MT</span></h3>
+            </div>
+            <BarChart3 size={100} className="absolute -bottom-6 -right-6 text-white opacity-[0.03] pointer-events-none" />
           </div>
           
-          <div className="glass-card p-8">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-palm-400 mb-4">Pending Sync Queue</p>
-            <h3 className="text-5xl font-serif font-bold text-palm-950 mb-2">{pendingSyncs}</h3>
-            <button
-              onClick={handleSyncToCloud}
-              disabled={isSyncing || pendingSyncs <= 0 || !isOnline}
-              className={`text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${isSyncing || pendingSyncs <= 0 || !isOnline ? 'text-palm-300 cursor-not-allowed opacity-50' : 'text-gold-600 hover:gap-3'}`}
-            >
-              {isSyncing ? 'Syncing Data...' : 'Run Sync'} <ArrowRight size={14} />
-            </button>
-            {!isOnline && pendingSyncs > 0 && (
-              <p className="text-[8px] text-amber-600 font-bold mt-2 uppercase tracking-tighter">Connect to cloud to sync records</p>
-            )}
+          <div className="group relative flex items-center p-6 bg-white rounded-[2.5rem] border border-gray-100 shadow-lg hover:shadow-xl transition-all text-left overflow-hidden">
+            <div className="flex-shrink-0 w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mr-4 border border-amber-100">
+              <History size={24} className="text-amber-500 fill-amber-500/10" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[9px] font-display font-bold uppercase tracking-[0.2em] text-palm-400 mb-0.5">Sync Queue</p>
+              <h3 className="text-xl font-serif font-bold text-palm-950 leading-none">{pendingSyncs} <span className="text-[10px] font-light opacity-60 uppercase">Items</span></h3>
+              <button
+                onClick={handleSyncToCloud}
+                disabled={isSyncing || pendingSyncs <= 0 || !isOnline}
+                className={`text-[8px] font-black uppercase tracking-widest mt-1 inline-flex items-center gap-1 transition-all ${isSyncing || pendingSyncs <= 0 || !isOnline ? 'text-palm-300 cursor-not-allowed opacity-50' : 'text-gold-600 hover:gap-2'}`}
+              >
+                {isSyncing ? 'Syncing...' : 'Run Sync'} <ArrowRight size={10} />
+              </button>
+            </div>
           </div>
 
-          <div className="glass-card p-8 border-gold-500/20 bg-gold-50/30">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-gold-600 mb-4">EUDR Risk Level</p>
-            <h3 className="text-5xl font-serif font-bold text-emerald-600 mb-2">LOW</h3>
-            <p className="text-xs text-palm-600 font-light">All batches within 2020 redline safety.</p>
+          <div className="group relative flex items-center p-6 bg-white rounded-[2.5rem] border border-gray-100 shadow-lg hover:shadow-xl transition-all text-left overflow-hidden">
+            <div className="flex-shrink-0 w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center mr-4 border border-emerald-100">
+              <ShieldCheck size={24} className="text-emerald-600 fill-emerald-600/10" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[9px] font-display font-bold uppercase tracking-[0.2em] text-palm-400 mb-0.5">Risk Level</p>
+              <h3 className="text-xl font-serif font-bold text-emerald-600 leading-none uppercase">Low</h3>
+            </div>
           </div>
         </div>
 
@@ -4342,15 +4377,15 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
                   <th className="px-4 py-5 w-12">
                     <div className="w-5 h-5 rounded border-2 border-palm-200" />
                   </th>
-                  <th className="px-4 py-5">Farmer Identity</th>
-                  <th className="px-8 py-5">Weight (MT)</th>
-                  <th className="px-8 py-5">Mode</th>
-                  <th className="px-8 py-5">Risk Status</th>
-                  <th className="px-8 py-5">Timestamp</th>
-                  <th className="px-8 py-5">
+                  <th className="px-4 py-5 font-display font-bold">Farmer Identity</th>
+                  <th className="px-4 py-5">Weight (MT)</th>
+                  <th className="px-4 py-5">Mode</th>
+                  <th className="px-4 py-5">Risk Status</th>
+                  <th className="px-4 py-5">Timestamp</th>
+                  <th className="px-4 py-5">
                     <div className="flex items-center justify-end gap-1">
                       <span>Evidence</span>
-                      <Info size={10} className="opacity-40" title="Photo • Signature • GPS • Report" />
+                      <Info size={10} className="opacity-40" />
                     </div>
                   </th>
                 </tr>
@@ -4362,7 +4397,7 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
                     onClick={() => setSelectedTx(row)}
                     className={`hover:bg-palm-50/30 transition-colors group cursor-pointer ${selectedIds.includes(row.txId || row.id) ? 'bg-gold-50/50' : (row.warning ? 'bg-red-50/50' : '')}`}
                   >
-                    <td className="px-4 py-6">
+                    <td className="px-4 py-4">
                       <button 
                         onClick={(e) => toggleSelection(row.txId || row.id, e)}
                         disabled={row.warning}
@@ -4378,74 +4413,64 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
                         {selectedIds.includes(row.txId || row.id) && <Check size={12} strokeWidth={4} />}
                       </button>
                     </td>
-                    <td className="px-4 py-6">
-                      <div className="font-display font-bold text-sm text-palm-950">
-                        {row.name} <span className="text-[10px] text-palm-400 font-normal ml-1">({row.farmerDisplayId || row.farmerId || row.id})</span>
+                    <td className="px-4 py-4">
+                      <div className="font-display font-bold text-xs sm:text-sm text-palm-950 leading-tight">
+                        {row.name}
                       </div>
+                      <div className="text-[9px] text-palm-400 font-normal mt-0.5">({row.farmerDisplayId || row.farmerId || row.id})</div>
                       {row.warning && (
                         <div className="mt-1 text-[8px] font-black text-red-600 uppercase tracking-tighter flex items-center gap-1">
-                          <AlertCircle size={10} /> Inspect batch carefully at mill
+                          <AlertCircle size={10} /> Inspector Alert
                         </div>
                       )}
                     </td>
-                    <td className="px-8 py-6">
-                      <span className={`text-lg font-serif font-bold ${row.warning ? 'text-red-600' : 'text-palm-950'}`}>{row.weightDisplay || (Number(row.weight).toFixed ? Number(row.weight).toFixed(2) : row.weight)}</span>
+                    <td className="px-4 py-4">
+                      <span className={`text-base sm:text-lg font-serif font-bold ${row.warning ? 'text-red-600' : 'text-palm-950'}`}>{row.weightDisplay || (Number(row.weight).toFixed ? Number(row.weight).toFixed(2) : row.weight)}</span>
                     </td>
-                    <td className="px-8 py-6">
-                      <span className="status-badge bg-palm-100 text-palm-700">{row.mode}</span>
+                    <td className="px-4 py-4">
+                      <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-1 bg-palm-100 text-palm-600 rounded-lg">{row.mode}</span>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-4 py-4">
                       <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${row.warning ? 'bg-red-500' : 'bg-emerald-500'}`} />
-                        <span className={`text-xs font-bold uppercase tracking-widest ${row.warning ? 'text-red-700' : 'text-emerald-700'}`}>{row.risk}</span>
+                        <div className={`w-1.5 h-1.5 rounded-full ${row.warning ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                        <span className={`text-[9px] font-bold uppercase tracking-widest ${row.warning ? 'text-red-700' : 'text-emerald-700'}`}>{row.risk}</span>
                       </div>
                     </td>
-                    <td className="px-8 py-6 text-xs text-palm-400 font-medium">{row.time}</td>
-                    <td className="px-8 py-6">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="px-4 py-4 text-[10px] text-palm-400 font-medium">{row.time}</td>
+                    <td className="px-4 py-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
                         {/* FFB Photo Evidence */}
                         {row.ffbBatchUrl && row.ffbBatchUrl !== 'no-photo-captured.jpg' ? (
-                          <div className="relative group">
-                            <button
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                // Show photo preview in a modal (can be enhanced later)
-                                const img = new Image();
-                                img.src = row.ffbBatchUrl;
-                                const win = window.open('');
-                                win?.document.write(img.outerHTML);
-                              }}
-                              className="p-2 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition-all"
-                              title="View FFB Batch Photo"
-                            >
-                              <Camera size={14} />
-                            </button>
-                          </div>
+                          <button
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              setEvidencePreview(row.ffbBatchUrl);
+                            }}
+                            className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-all border border-emerald-100 shadow-sm"
+                            title="View FFB Batch Photo"
+                          >
+                            <Camera size={14} />
+                          </button>
                         ) : (
-                          <div className="p-2 bg-slate-100 text-slate-400 rounded-lg opacity-50" title="No photo captured">
+                          <div className="p-1.5 bg-slate-50 text-slate-300 rounded-lg opacity-40 border border-slate-100" title="No photo captured">
                             <Camera size={14} />
                           </div>
                         )}
 
                         {/* Signature Evidence (Mode B) */}
                         {row.mode === 'Ramp' && row.farmerSignatureUrl ? (
-                          <div className="relative group">
-                            <button
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                const img = new Image();
-                                img.src = row.farmerSignatureUrl;
-                                const win = window.open('');
-                                win?.document.write(img.outerHTML);
-                              }}
-                              className="p-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-all"
-                              title="View Farmer Signature"
-                            >
-                              <PenTool size={14} />
-                            </button>
-                          </div>
+                          <button
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              setEvidencePreview(row.farmerSignatureUrl || null);
+                            }}
+                            className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm"
+                            title="View Farmer Signature"
+                          >
+                            <PenTool size={14} />
+                          </button>
                         ) : row.mode === 'Ramp' ? (
-                          <div className="p-2 bg-slate-100 text-slate-400 rounded-lg opacity-50" title="No signature">
+                          <div className="p-1.5 bg-slate-50 text-slate-300 rounded-lg opacity-40 border border-slate-100" title="No signature">
                             <PenTool size={14} />
                           </div>
                         ) : null}
@@ -4830,7 +4855,7 @@ const TransactionFlow = ({ onComplete, isOnline, onOfflineTransaction }: { onCom
         { facingMode: 'environment' },
           {
             fps: 12,
-            qrbox: { width: 260, height: 260 },
+            qrbox: { width: 180, height: 180 },
             aspectRatio: 1,
             disableFlip: false,
           },
@@ -5183,7 +5208,7 @@ const TransactionFlow = ({ onComplete, isOnline, onOfflineTransaction }: { onCom
     <motion.div 
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="min-h-screen pt-32 pb-20 px-6 max-w-2xl mx-auto"
+      className="pb-20 px-6"
     >
       {/* Hidden container for file-based QR scanning */}
       <div id={fileScannerElementId} className="hidden" />
@@ -5204,10 +5229,10 @@ const TransactionFlow = ({ onComplete, isOnline, onOfflineTransaction }: { onCom
                 {!isScannerActive && <QrCode size={100} className="text-gold-400 opacity-20" />}
                 <div
                   id={scannerElementId}
-                  className={`absolute inset-0 z-10 ${isScannerActive ? '' : 'opacity-0 pointer-events-none'}`}
+                  className={`absolute inset-0 z-10 transition-opacity duration-300 ${isScannerActive ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 />
-                <div className={`absolute inset-0 border-2 rounded-[3rem] transition-colors ${isOnline ? 'border-gold-400/10' : 'border-amber-400/50'}`} />
-                <div className={`animate-scan-line ${!isOnline ? 'bg-amber-400/50' : ''}`} />
+                <div className={`absolute inset-0 border-2 rounded-[3rem] transition-colors pointer-events-none ${isOnline ? 'border-gold-400/10' : 'border-amber-400/50'}`} />
+                {isScannerActive && <div className={`animate-scan-line z-20 ${!isOnline ? 'bg-amber-400/50' : ''}`} />}
               </div>
               <h4 className="text-3xl font-serif font-bold text-parchment mb-4">Scanning Farmer QR</h4>
               <p className="text-parchment/60 font-light mb-3">Establishing secure handshake with Veri ID.</p>
@@ -5610,7 +5635,7 @@ const ManifestView = ({ onBack, selectedIds, transactions }: { onBack: () => voi
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="min-h-screen pt-32 pb-20 px-6 max-w-4xl mx-auto"
+      className="pb-20 px-6"
     >
       {showDDS && (
         <DDSReport 
@@ -5971,18 +5996,26 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-parchment text-palm-950 font-sans selection:bg-gold-200 selection:text-palm-950">
-      <Navbar 
-        onHome={handleHome} 
-        onBack={handleBack}
-        isOnline={isOnline}
-        onToggleOnline={handleToggleOnline}
-        showBack={view !== 'ROLE_SELECT' && view !== 'farmer-dashboard'} 
-        onLogout={handleLogout}
-        showLogout={view !== 'ROLE_SELECT'}
-      />
-      
-      <main>
+    <div className="min-h-screen bg-[#F8F9FA] text-palm-950 font-sans selection:bg-gold-200">
+      {/* Background Separation Layers */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-3xl h-full bg-parchment shadow-[0_0_100px_rgba(0,0,0,0.02)]" />
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-50/20 rounded-full blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-gold-50/20 rounded-full blur-[120px]" />
+      </div>
+
+      <div className="relative z-10 w-full max-w-3xl mx-auto min-h-screen bg-parchment border-x border-gray-100 flex flex-col">
+        <Navbar 
+          onHome={handleHome} 
+          onBack={handleBack}
+          isOnline={isOnline}
+          onToggleOnline={handleToggleOnline}
+          showBack={view !== 'ROLE_SELECT' && view !== 'farmer-dashboard'} 
+          onLogout={handleLogout}
+          showLogout={view !== 'ROLE_SELECT'}
+        />
+        
+        <main className="flex-1">
         <AnimatePresence mode="wait">
           {view === 'ROLE_SELECT' && (
             <Home 
@@ -6076,7 +6109,7 @@ export default function App() {
       </main>
 
       <footer className="py-12 px-6 border-t border-palm-100 bg-white/50">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
+        <div className="max-w-3xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-palm-950 rounded-lg flex items-center justify-center text-gold-400">
               <ShieldCheck size={18} />
@@ -6091,6 +6124,7 @@ export default function App() {
           </div>
         </div>
       </footer>
+      </div>
     </div>
   );
 }
