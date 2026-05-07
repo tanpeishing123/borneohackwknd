@@ -1,3 +1,5 @@
+"""FastAPI routing layer for farmer onboarding, dealer workflows, OCR extraction, geofence checks, and PDF reports."""
+
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.responses import FileResponse
 from fpdf import FPDF
@@ -112,6 +114,7 @@ class AuditRequestSchema(BaseModel):
 
 @app.get("/user/{user_id}")
 async def get_user(user_id: str):
+    # get_user - resolve a user ID into a farmer or dealer profile.
     # 调用 logic 里的函数去查数据
     profile = get_user_profile(user_id)
     if not profile:
@@ -121,6 +124,7 @@ async def get_user(user_id: str):
 
 @app.post("/farmer/register")
 async def register_farmer(data: FarmerSchema):
+    # register_farmer - send farmer registration data into the business logic layer.
     """
     接收前端 FarmerData，进行逻辑处理并返回结果
     """
@@ -141,6 +145,7 @@ async def register_farmer(data: FarmerSchema):
 
 @app.post("/transaction/verify")
 async def verify_transaction(tx: TransactionSchema):
+    # verify_transaction - run the anti-laundering and quota checks before issuing a report.
     tx_dict = tx.model_dump()
     
     # 1. 先进行安全核验
@@ -168,6 +173,7 @@ import os
 
 @app.get("/transaction/report/{tx_id}")
 async def get_report(tx_id: str):
+    # get_report - stream the generated compliance PDF back to the browser.
     """
     华文解释：这是专门用来下载 PDF 的接口。
     它会根据你输入的 ID，去文件夹里找对应的文件并传给浏览器。
@@ -188,6 +194,7 @@ async def get_report(tx_id: str):
 
 @app.get("/farmer/qr/{farmer_id}")
 async def get_farmer_qr(farmer_id: str):
+    # get_farmer_qr - create the QR payload used to open the farmer identity flow.
     """
     前端行为：点击 Generate ID 按钮
     """
@@ -206,6 +213,7 @@ async def get_farmer_qr(farmer_id: str):
 # [对应第三阶段 Dashboard] 扫码获取农民信息
 @app.get("/verify/farmer/{id}")
 async def verify_farmer_id(id: str):
+    # verify_farmer_id - load the farmer record for dashboard verification.
     status = get_farmer_status_logic(id)
     if not status:
         raise HTTPException(status_code=404, detail="Farmer not recognized.")
@@ -214,6 +222,7 @@ async def verify_farmer_id(id: str):
 # [对应第三阶段 Mode Toggle] 检查地理围栏
 @app.post("/verify/gps")
 async def verify_gps(farmer_id: str, lat: float, lng: float):
+    # verify_gps - compare the collector or dealer location against the farmer boundary.
     # 1. 先拿农民的地块数据
     status = get_farmer_status_logic(farmer_id)
     if not status:
@@ -229,6 +238,7 @@ async def verify_gps(farmer_id: str, lat: float, lng: float):
 
 @app.post("/dealer/register")
 async def register_dealer(data: DealerSchema):
+    # register_dealer - persist dealer station identity, location, and license records.
     result = process_dealer_registration(data.model_dump())
     if result["success"]:
         return {"status": "success", "message": "Dealer registration successful"}
@@ -237,6 +247,7 @@ async def register_dealer(data: DealerSchema):
 
 @app.post("/transaction/save")
 async def save_transaction_endpoint(transaction: dict):
+    # save_transaction_endpoint - write a dealer transaction into persistent storage.
     """
     Save transaction data from dealer's TransactionFlow
     """
@@ -253,6 +264,7 @@ async def save_transaction_endpoint(transaction: dict):
 
 @app.get("/transactions")
 async def list_transactions():
+    # list_transactions - return the current transaction ledger for the dashboard.
     result = get_all_transactions()
     if result["success"]:
         return {"status": "success", "transactions": result["transactions"]}
@@ -261,6 +273,7 @@ async def list_transactions():
 
 @app.get("/farmer/{farmer_id}/transactions")
 async def list_farmer_transactions(farmer_id: str):
+    # list_farmer_transactions - filter the ledger to one farmer's transaction history.
     result = get_transactions_by_farmer(farmer_id)
     if result["success"]:
         return {"status": "success", "transactions": result["transactions"]}
@@ -269,6 +282,7 @@ async def list_farmer_transactions(farmer_id: str):
 
 @app.post("/farmer/{farmer_id}/transactions/clear")
 async def clear_farmer_transactions_endpoint(farmer_id: str):
+    # clear_farmer_transactions_endpoint - delete a farmer's cached transactions after sync.
     result = clear_transactions_by_farmer(farmer_id)
     if result["success"]:
         return {"status": "success", "deleted": result.get("deleted", 0)}
@@ -277,6 +291,7 @@ async def clear_farmer_transactions_endpoint(farmer_id: str):
 
 @app.post("/transaction/audit")
 async def request_audit_endpoint(payload: AuditRequestSchema):
+    # request_audit_endpoint - flag a transaction for manual review when risk is detected.
     result = request_transaction_audit(payload.transactionId, payload.requestedBy or 'dealer')
     if result["success"]:
         return {
@@ -289,6 +304,7 @@ async def request_audit_endpoint(payload: AuditRequestSchema):
 
 @app.post("/transactions/sync")
 async def sync_transactions_endpoint(payload: dict):
+    # sync_transactions_endpoint - import offline transaction batches into the live ledger.
     result = sync_transactions(payload)
     if result["success"]:
         return {
@@ -303,11 +319,13 @@ async def sync_transactions_endpoint(payload: dict):
 
 @app.post("/transaction/sync")
 async def sync_transactions_endpoint_compat(payload: dict):
+    # sync_transactions_endpoint_compat - backward-compatible alias for older clients.
     """Backward-compatible alias for clients using singular path."""
     return await sync_transactions_endpoint(payload)
 
 @app.post("/farmer/{farmer_id}/plot")
 async def add_plot(farmer_id: str, plot: PlotSchema):
+    # add_plot - append a plot to the farmer record after capacity validation.
     result = add_plot_to_farmer(farmer_id, plot.model_dump())
     if result["success"]:
         return {"status": "success", "new_quota": result["new_quota"]}
@@ -316,12 +334,14 @@ async def add_plot(farmer_id: str, plot: PlotSchema):
 
 @app.post("/lorry/manifest")
 async def create_lorry_manifest(manifest: dict):  # 简化，实际应有schema
+    # create_lorry_manifest - generate the consolidated manifest PDF for dealer shipments.
     # 假设manifest包含 id, lorryPlate, selectedTransactions, totalWeight
     report_file = generate_consolidated_report(manifest)
     return {"status": "success", "report_url": f"/lorry/report/{manifest['id']}"}
 
 @app.get("/lorry/report/{manifest_id}")
 async def get_consolidated_report(manifest_id: str):
+    # get_consolidated_report - download the generated lorry manifest PDF.
     file_path = f"consolidated_report_{manifest_id}.pdf"
     if os.path.exists(file_path):
         return FileResponse(path=file_path, filename=file_path, media_type='application/pdf')
@@ -331,6 +351,7 @@ async def get_consolidated_report(manifest_id: str):
 # --- 地契OCR提取端点 ---
 @app.post("/extract/land-title")
 async def extract_land_title(file: UploadFile = File(...)):
+    # extract_land_title - OCR the land title and return owner, area, and location metadata.
     """
     上传地契图像，使用Tesseract OCR提取Lot Number等关键数据
     """
@@ -396,6 +417,7 @@ async def extract_land_title(file: UploadFile = File(...)):
 # --- 地理编码 API ---
 @app.post("/geo/resolve-land-title")
 async def resolve_land_title_geo(payload: dict):
+    # resolve_land_title_geo - convert land title fields into ranked geocoding candidates.
     """
     从Land Title字段推断地块位置坐标
     输入: lot_number, mukim, district, state
@@ -433,6 +455,7 @@ async def resolve_land_title_geo(payload: dict):
 
 @app.post("/extract/ic")
 async def extract_ic(file: UploadFile = File(...), require_ai: bool = False):
+    # extract_ic - OCR the IC document and extract identity fields for matching.
     """Extract IC name and ID number from uploaded document image."""
     try:
         contents = await file.read()
@@ -470,6 +493,7 @@ async def extract_ic(file: UploadFile = File(...), require_ai: bool = False):
 
 @app.post("/extract/permit/{permit_type}")
 async def extract_permit(permit_type: str, file: UploadFile = File(...), require_ai: bool = False):
+    # extract_permit - OCR a permit and validate that it matches the requested permit type.
     """Extract permit number from uploaded permit image/PDF."""
     try:
         contents = await file.read()
@@ -507,6 +531,7 @@ async def extract_permit(permit_type: str, file: UploadFile = File(...), require
 
 @app.post("/eudr/check")
 async def check_eudr(plot_data: dict):
+    # check_eudr - run the historical NDVI comparison used to score deforestation risk.
     """
     Check EUDR deforestation risk for a plot.
     Falls back to mock data if real EUDR API unavailable.
@@ -521,6 +546,12 @@ async def check_eudr(plot_data: dict):
         if not upload_date:
             return {"status": "error", "message": "Upload date is required"}
         
+        # Compute centroid to support deterministic demo zones.
+        centroid_lat = sum(p.get('lat', 0) for p in boundary) / len(boundary)
+        centroid_lng = sum(p.get('lng', 0) for p in boundary) / len(boundary)
+        in_bangi_demo_zone = abs(centroid_lat - 2.9185) < 0.2 and abs(centroid_lng - 101.7854) < 0.2
+        in_lahad_datu_demo_zone = abs(centroid_lat - 5.0229) < 0.5 and abs(centroid_lng - 118.3280) < 0.5
+
         # Try real EUDR check first
         try:
             from logic import check_eudr_deforestation
@@ -540,10 +571,68 @@ async def check_eudr(plot_data: dict):
                 ]
                 if any(isinstance(v, float) and not math.isfinite(v) for v in numeric_fields):
                     raise ValueError('Real EUDR returned non-finite values; switching to fallback')
+                baseline_forest_2020 = float(result.get('ndvi_2020') or 0) >= 0.68
+                current_is_agri = float(result.get('ndvi_current') or 0) <= 0.60
+                eudr_status = 'unsafe' if (baseline_forest_2020 and current_is_agri) else 'safe'
+                result['eudr_status'] = eudr_status
+                result['classification_reason'] = (
+                    'Detected area overlaps with 2020 forest baseline and now shows agricultural signature.'
+                    if eudr_status == 'unsafe'
+                    else 'Detected area was already agricultural by 2020 baseline comparison.'
+                )
+                result['contains_forest_2020_pixels'] = baseline_forest_2020
                 return {"status": "success", "data": result}
         except Exception as eudr_err:
             print(f"Real EUDR check failed, using mock data: {eudr_err}")
         
+        if in_bangi_demo_zone:
+            return {
+                "status": "success",
+                "data": {
+                    "success": True,
+                    "risk_score": 10.8,
+                    "risk_level": "Low",
+                    "ndvi_2020": 0.57,
+                    "ndvi_current": 0.61,
+                    "ndvi_change_pct": 7.0,
+                    "eudr_status": "safe",
+                    "classification_reason": "Current planting area aligns with land that was already agricultural in 2020.",
+                    "contains_forest_2020_pixels": False,
+                    "comparison_map_base64": None,
+                    "details": {
+                        "plot_id": plot_id,
+                        "upload_date": upload_date,
+                        "zone": "Bangi",
+                        "baseline": "agricultural_2020",
+                        "note": "[Mock-Deterministic] Bangi safe scenario"
+                    }
+                }
+            }
+
+        if in_lahad_datu_demo_zone:
+            return {
+                "status": "success",
+                "data": {
+                    "success": True,
+                    "risk_score": 87.4,
+                    "risk_level": "High",
+                    "ndvi_2020": 0.82,
+                    "ndvi_current": 0.45,
+                    "ndvi_change_pct": -45.1,
+                    "eudr_status": "unsafe",
+                    "classification_reason": "Current planting area contains pixels classified as forest in 2020 baseline.",
+                    "contains_forest_2020_pixels": True,
+                    "comparison_map_base64": None,
+                    "details": {
+                        "plot_id": plot_id,
+                        "upload_date": upload_date,
+                        "zone": "Lahad Datu",
+                        "baseline": "forest_2020",
+                        "note": "[Mock-Deterministic] Lahad Datu unsafe scenario"
+                    }
+                }
+            }
+
         # Fallback: Mock EUDR data for testing
         import io, numpy as np
         import matplotlib
@@ -586,6 +675,9 @@ async def check_eudr(plot_data: dict):
                 "ndvi_2020": 0.652,
                 "ndvi_current": 0.628,
                 "ndvi_change_pct": -3.7,
+                "eudr_status": "safe",
+                "classification_reason": "Fallback simulation indicates agricultural baseline continuity since 2020.",
+                "contains_forest_2020_pixels": False,
                 "comparison_map_base64": f"data:image/png;base64,{img_b64}",
                 "details": {
                     "scene_2020_date": "2020-12-15",

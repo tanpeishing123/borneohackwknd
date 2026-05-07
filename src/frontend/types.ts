@@ -1,3 +1,4 @@
+// Shared TypeScript interfaces for frontend farmer and transaction data.
 export type UserRole = 'farmer' | 'collector' | null;
 
 export interface FarmerData {

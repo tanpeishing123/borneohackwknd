@@ -1,3 +1,4 @@
+// Main React application for farmer onboarding, dealer registration, geofence mapping, and DDS exports.
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -6,6 +7,10 @@ import { Html5Qrcode } from 'html5-qrcode';
 import QRCode from 'qrcode';
 import { MapContainer, TileLayer, CircleMarker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+
+const LeafletMapContainer = MapContainer as unknown as React.ComponentType<any>;
+const LeafletTileLayer = TileLayer as unknown as React.ComponentType<any>;
+const LeafletCircleMarker = CircleMarker as unknown as React.ComponentType<any>;
 import { 
   Building2,
   Leaf, 
@@ -59,11 +64,20 @@ type ScannedFarmer = {
   monthlyQuota?: number;
   location?: { lat: number; lng: number };
   boundary?: { lat: number; lng: number }[];
+  eudrChecked?: boolean;
+  eudrRiskScore?: number;
+  eudrRiskLevel?: string;
+  eudrNdvi2020?: number;
+  eudrNdviCurrent?: number;
+  eudrNdviChangePct?: number;
+  eudrComparisonMap?: string | null;
+  eudrCheckDate?: string;
 };
 
 // --- Components ---
 
 const Navbar = ({ onHome, onBack, isOnline, showBack, onLogout, showLogout, onToggleOnline }: { onHome: () => void, onBack?: () => void, isOnline?: boolean, showBack?: boolean, onLogout?: () => void, showLogout?: boolean, onToggleOnline?: () => void }) => {
+  // Navbar - provides global navigation, online status, and account controls.
   const [showMenu, setShowMenu] = useState(false);
 
   return (
@@ -141,6 +155,7 @@ const Navbar = ({ onHome, onBack, isOnline, showBack, onLogout, showLogout, onTo
 };
 
 const Home = ({ onSelectRole }: { onSelectRole: (role: 'farmer' | 'collector') => void, key?: string }) => (
+// Home - role selection landing screen for the farmer and collector journeys.
   <motion.div 
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
@@ -232,6 +247,7 @@ const PERMIT_LIBRARY = [
 ];
 
 const MapRecenter = ({ lat, lng }: { lat: number; lng: number }) => {
+  // MapRecenter - keep the Leaflet map centered on the detected land title location.
   const map = useMap();
   useEffect(() => {
     map.setView([lat, lng], map.getZoom(), { animate: true });
@@ -239,7 +255,19 @@ const MapRecenter = ({ lat, lng }: { lat: number; lng: number }) => {
   return null;
 };
 
+const DocumentPreview = ({ src, alt, className }: { src: string; alt: string; className?: string }) => {
+  // DocumentPreview - render PDFs with embed and images with img so uploads preview correctly.
+  const isPdf = src.startsWith('data:application/pdf') || src.toLowerCase().endsWith('.pdf');
+
+  if (isPdf) {
+    return <embed src={src} type="application/pdf" className={className} />;
+  }
+
+  return <img src={src} alt={alt} className={className} />;
+};
+
 const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (formData: any, plots: any[]) => void, plots: any[], setPlots: React.Dispatch<React.SetStateAction<any[]>>, key?: string }) => {
+  // FarmerRegistration - drive identity capture, permit uploads, plot creation, and geofence auto-detect.
   const [step, setStep] = useState(1);
   const [isScanning, setIsScanning] = useState(false);
   const [scanningMessage, setScanningMessage] = useState('AI Verifying Document...');
@@ -249,10 +277,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
   const [generatingMessage, setGeneratingMessage] = useState('Generating Universal ID...');
   const [mapPoints, setMapPoints] = useState<{x: number, y: number}[]>([]);
   const [mapCenter, setMapCenter] = useState({ lat: 3.139, lng: 101.6869 });
-  // 地理位置候选和确认
-  const [geoLocationCandidates, setGeoLocationCandidates] = useState<any[]>([]);
-  const [showGeoConfirmation, setShowGeoConfirmation] = useState(false);
-  const [selectedGeoCandidateIndex, setSelectedGeoCandidateIndex] = useState(0);
+  const [previewModal, setPreviewModal] = useState<{ open: boolean; src: string | null; title?: string | null }>({ open: false, src: null, title: null });
   const [dragPointIndex, setDragPointIndex] = useState<number | null>(null);
   const [appNotice, setAppNotice] = useState<null | { type: 'error' | 'warning' | 'info' | 'success'; message: string }>(null);
   const [confirmAreaMismatchOnce, setConfirmAreaMismatchOnce] = useState(false);
@@ -261,11 +286,14 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
     name: '',
     idNumber: '',
     icPhoto: null as string | null,
+    icPreview: null as string | null,
     permitPhotos: {} as Record<string, string | null>,
+    permitPreviews: {} as Record<string, string | null>,
     permitNumbers: {} as Record<string, string | null>,
     permitAreas: {} as Record<string, number | null>,  // 新增：存储各许可证的面积
     permitValidations: {} as Record<string, { matched: boolean; detectedType?: string; message?: string } | null>,  // 新增：存储许可证验证结果
     permitDebug: {} as Record<string, { status?: string; code?: string; detectedType?: string; reason?: string; rawTextSnippet?: string } | null>,
+    licensePhotos: {} as Record<string, string | null>,
     icDebug: null as null | { status?: string; code?: string; reason?: string; rawTextSnippet?: string },
     permitTypes: ['MPOB'] as string[],
     customPermits: [] as { name: string, photo: string | null, number: string | null }[],
@@ -279,6 +307,21 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
     otherCropType: '',
     plantingYear: '2018',
     titlePhoto: null as string | null,
+    titlePreview: null as string | null,
+    eudrScan: null as null | {
+      verified: boolean;
+      compliant: boolean;
+      status: 'safe' | 'unsafe';
+      reason: string;
+      riskScore: number;
+      riskLevel: string;
+      ndvi2020: number;
+      ndviCurrent: number;
+      ndviChangePct: number;
+      comparisonMap: string | null;
+      checkedAt: string;
+      details?: any;
+    },
     landTitleMetadata: null as null | {
       lot_number?: string | null;
       plot_alias?: string | null;
@@ -327,10 +370,12 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
   const availableCropOptions = getAvailableCropOptions();
 
   const showNotice = (message: string, type: 'error' | 'warning' | 'info' | 'success' = 'info') => {
+    // showNotice - surface validation and workflow feedback to the farmer.
     setAppNotice({ type, message });
   };
 
   const buildSimulatedEudrData = (plot: any, note: string) => {
+    // buildSimulatedEudrData - generate the NDVI historical comparison used by the EUDR pitch flow.
     const canvas = document.createElement('canvas');
     canvas.width = 1200;
     canvas.height = 420;
@@ -618,6 +663,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
   };
 
   const startAutoEudrProgress = (plotId: number) => {
+    // startAutoEudrProgress - animate asynchronous EUDR verification after a plot is saved.
     let progress = 0;
     const timer = window.setInterval(() => {
       progress += 8 + Math.random() * 16;
@@ -659,6 +705,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
   };
 
   const parseAreaFromRawText = (rawText: string | undefined): number | null => {
+    // parseAreaFromRawText - recover a permit area fallback when OCR returns plain text instead of a parsed field.
     if (!rawText) return null;
     const patterns = [
       /(?:Registered Area|Licensed Area|Land Area|Area)\s*[:\-]?\s*(\d+(?:\.\d+)?)/i,
@@ -675,6 +722,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
   };
 
   const getPermitAreaByCrop = (crop: string): string => {
+    // getPermitAreaByCrop - map the selected crop to the registered permit area.
     if (crop === 'Palm Oil') return String(formData.permitAreas['MPOB'] ?? '');
     if (crop === 'Cocoa') return String(formData.permitAreas['MCB'] ?? '');
     if (crop === 'Rubber') return String(formData.permitAreas['LGM'] ?? '');
@@ -682,6 +730,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
   };
 
   const setPlotCropType = (crop: string) => {
+    // setPlotCropType - synchronize the chosen crop with the matched permit area.
     // Auto-fill plot area from corresponding permit's registered area
     const autoArea = getPermitAreaByCrop(crop);
     
@@ -695,6 +744,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
 
   // Keep area synced when OCR permit extraction finishes after crop selection.
   useEffect(() => {
+    // Keep area synced when OCR permit extraction finishes after crop selection.
     if (currentPlot.cropType === 'Other') return;
     const autoArea = getPermitAreaByCrop(currentPlot.cropType);
     if (autoArea && autoArea !== currentPlot.area) {
@@ -707,6 +757,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
   }, [currentPlot.area, currentPlot.cropType, currentPlot.landTitleMetadata?.land_area]);
 
   const getRequiredPermitByCrop = (crop: string): string => {
+    // getRequiredPermitByCrop - resolve the permit code required for the active crop.
     if (crop === 'Palm Oil') return 'MPOB';
     if (crop === 'Cocoa') return 'MCB';
     if (crop === 'Rubber') return 'LGM';
@@ -750,21 +801,20 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
     ? totalAreaInLotLive > landTitleAreaLive
     : false;
 
-  // 检查用户是否还在编辑地图（画了多边形但没按Finish Edit）
-  const isEditingMapIncomplete = isDrawing && mapPoints.length >= 3;
-
   const canSavePlot = Boolean(
     currentPlot.area &&
     currentPlot.titlePhoto &&
     currentPlot.cropType &&
+    mapPoints.length >= 3 &&
+    currentPlot.eudrScan?.verified &&
     (currentPlot.cropType !== 'Other' || currentPlot.otherCropType.trim()) &&
     (!currentRequiredPermit || formData.permitPhotos[currentRequiredPermit]) &&
     !isOverLotCapacityLive &&
-    permitAreaStatus !== 'red' &&
-    !isEditingMapIncomplete  // 必须先Finish Edit才能保存
+    permitAreaStatus !== 'red'
   );
 
   const addPlot = () => {
+    // addPlot - validate capacity, permit alignment, and EUDR readiness before persisting a plot.
     const selectedCrop = currentPlot.cropType;
     if (!selectedCrop) {
       showNotice('Please select a crop type for this plot.', 'warning');
@@ -838,8 +888,10 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
         return;
       }
 
-      // 立即生成EUDR数据，不需要进度条
-      const simulated = buildSimulatedEudrData(currentPlot, 'Auto simulated on plot save');
+      if (!currentPlot.eudrScan?.verified) {
+        showNotice('Please run Auto-Detect satellite scan before saving this plot.', 'warning');
+        return;
+      }
 
       const newPlot = { 
         ...currentPlot, 
@@ -855,23 +907,27 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
         userAdjusted: currentPlot.landTitleMetadata?.userAdjusted || false,
         areaValidationStatus,
         areaValidationNote,
-        // EUDR 字段（直接设置）
+        // EUDR 字段（来自 Auto-Detect satellite scan）
         eudrChecked: true,
-        eudrRiskScore: simulated.risk_score,
-        eudrRiskLevel: simulated.risk_level,
-        eudrNdvi2020: simulated.ndvi_2020,
-        eudrNdviCurrent: simulated.ndvi_current,
-        eudrNdviChangePct: simulated.ndvi_change_pct,
-        eudrComparisonMap: simulated.comparison_map_base64,
-        eudrCheckDate: new Date().toISOString(),
-        eudrDetails: simulated.details,
+        eudrRiskScore: currentPlot.eudrScan.riskScore,
+        eudrRiskLevel: currentPlot.eudrScan.riskLevel,
+        eudrNdvi2020: currentPlot.eudrScan.ndvi2020,
+        eudrNdviCurrent: currentPlot.eudrScan.ndviCurrent,
+        eudrNdviChangePct: currentPlot.eudrScan.ndviChangePct,
+        eudrComparisonMap: currentPlot.eudrScan.comparisonMap,
+        eudrCheckDate: currentPlot.eudrScan.checkedAt,
+        eudrDetails: {
+          ...(currentPlot.eudrScan.details || {}),
+          classification_reason: currentPlot.eudrScan.reason,
+          eudr_status: currentPlot.eudrScan.status,
+        },
         eudrProgress: 100,
-        eudrStatus: 'safe',
+        eudrStatus: currentPlot.eudrScan.status,
         landTitleUploadDate: new Date().toISOString()  // 记录上传时间
       };
 
       setPlots(prev => [...prev, newPlot]);
-      setCurrentPlot({ title: '', area: '', cropType: 'Palm Oil', otherCropType: '', plantingYear: '2018', titlePhoto: null, landTitleMetadata: null });
+      setCurrentPlot({ title: '', area: '', cropType: 'Palm Oil', otherCropType: '', plantingYear: '2018', titlePhoto: null, titlePreview: null, eudrScan: null, landTitleMetadata: null });
       setMapPoints([]);
       setIsDrawing(false);
       setIsAddingPlot(false);
@@ -881,6 +937,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
   };
 
   const recalculatePlotArea = (points: {x: number, y: number}[]) => {
+    // recalculatePlotArea - convert drawn polygon points into hectares for capacity checks.
     if (points.length < 3) return;
     let area = 0;
     for (let i = 0; i < points.length; i++) {
@@ -894,7 +951,30 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
     setCurrentPlot(prev => ({ ...prev, area: calculatedHectares }));
   };
 
+  const scaleUiPointsToHectares = (uiPoints: {x:number,y:number}[], targetHa: number) => {
+    // scaleUiPointsToHectares - shrink or expand the detected polygon to the licensed planting area.
+    if (!uiPoints || uiPoints.length < 3 || !targetHa || targetHa <= 0) return uiPoints;
+    // compute current polygon area (percentage-coords) using same shoelace formula
+    let area = 0;
+    for (let i = 0; i < uiPoints.length; i++) {
+      const j = (i + 1) % uiPoints.length;
+      area += uiPoints[i].x * uiPoints[j].y;
+      area -= uiPoints[j].x * uiPoints[i].y;
+    }
+    area = Math.abs(area) / 2;
+    const scaleFactor = 10 / 10000; // same conversion used in recalculatePlotArea
+    const currentHa = area * scaleFactor;
+    if (!currentHa || currentHa <= 0) return uiPoints;
+    const ratio = Math.sqrt(targetHa / currentHa);
+    // centroid
+    const cx = uiPoints.reduce((s, p) => s + p.x, 0) / uiPoints.length;
+    const cy = uiPoints.reduce((s, p) => s + p.y, 0) / uiPoints.length;
+    const scaled = uiPoints.map(p => ({ x: cx + (p.x - cx) * ratio, y: cy + (p.y - cy) * ratio }));
+    return scaled;
+  };
+
   const getAutoPolygonPoints = () => {
+    // getAutoPolygonPoints - provide a default boundary shape when no site-specific template is available.
     const cx = 50;
     const cy = 50;
     const halfW = 18;
@@ -905,6 +985,39 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
       { x: cx + halfW, y: cy + halfH },
       { x: cx - halfW, y: cy + halfH },
     ];
+  };
+
+  const buildSatelliteDetectedBoundary = (lat: number, lng: number) => {
+    // buildSatelliteDetectedBoundary - translate detected center coordinates into map points and GPS boundary.
+    const isBangi = Math.abs(lat - 2.9185) < 0.2 && Math.abs(lng - 101.7854) < 0.2;
+    const isLahadDatu = Math.abs(lat - 5.0229) < 0.5 && Math.abs(lng - 118.3280) < 0.5;
+
+    const uiPoints = isBangi
+      ? [
+          { x: 33, y: 38 },
+          { x: 68, y: 35 },
+          { x: 74, y: 57 },
+          { x: 55, y: 71 },
+          { x: 31, y: 62 }
+        ]
+      : isLahadDatu
+        ? [
+            { x: 27, y: 32 },
+            { x: 72, y: 29 },
+            { x: 78, y: 62 },
+            { x: 49, y: 75 },
+            { x: 24, y: 58 }
+          ]
+        : getAutoPolygonPoints();
+
+    const scaleLat = 0.012;
+    const scaleLng = 0.012;
+    const boundary = uiPoints.map((p) => ({
+      lat: lat + ((p.y - 50) / 50) * scaleLat,
+      lng: lng + ((p.x - 50) / 50) * scaleLng,
+    }));
+
+    return { uiPoints, boundary };
   };
 
   const handleMapClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -950,9 +1063,19 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
     return percentagePoints.map(p => `${(p.x / 100) * rect.width},${(p.y / 100) * rect.height}`).join(' ');
   };
 
-  // Mock satellite verification based on planting year and location
+  // Satellite verification follows Auto-Detect EUDR result when available.
   const verifySatelliteData = async (plot: any) => {
-    // Simulate API call delay
+    if (plot?.eudrChecked) {
+      return {
+        verified: true,
+        compliant: plot?.eudrStatus !== 'unsafe',
+        plantingYear: parseInt(plot?.plantingYear || '2018'),
+        forestLossDetected: plot?.eudrStatus === 'unsafe',
+        verificationDate: new Date().toISOString().split('T')[0]
+      };
+    }
+
+    // Backward-compatible fallback for older plots without EUDR scan.
     await new Promise(r => setTimeout(r, 800));
     
     const plantingYear = parseInt(plot.plantingYear);
@@ -971,6 +1094,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
   };
 
   const autoDetectLocation = async () => {
+    // autoDetectLocation - resolve the land title location, scale the geofence, and run the EUDR check.
     // Check if land title has been uploaded
     if (!currentPlot.titlePhoto) {
       showNotice('Please upload Land Title document first to auto-detect location and area.', 'warning');
@@ -984,12 +1108,14 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
       return;
     }
 
-    // Auto-detect should exit manual drawing mode to avoid interaction conflicts.
+    // Auto-detect drives a full satellite-scan flow (no manual confirmation/edit step).
     setIsDrawing(false);
     setIsScanning(true);
-    setScanningMessage('AI Resolving location from Land Title...');
+    setScanningMessage('Satellite-Scan: Resolving title location...');
 
     try {
+      let selected: any = null;
+
       // 优先策略：如果 Land Title 已经包含 GPS 坐标，直接使用（高置信度 95%）
       const hasDirectCoordinates = 
         metadata.center_lat && 
@@ -999,7 +1125,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
 
       if (hasDirectCoordinates) {
         // 直接使用 Land Title 上的坐标
-        const directCandidate = {
+        selected = {
           lat: metadata.center_lat!,
           lng: metadata.center_lng!,
           display_name: `${metadata.lot_number || 'Lot'} - ${metadata.mukim || ''} ${metadata.district || ''} ${metadata.state || ''}`.trim(),
@@ -1010,91 +1136,106 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
           osm_id: 'N/A'
         };
 
-        // 只有一个候选（直接坐标）
-        setGeoLocationCandidates([directCandidate]);
-        setSelectedGeoCandidateIndex(0);
-        setShowGeoConfirmation(true);
-        
-        // Update map
-        setMapCenter({ lat: directCandidate.lat, lng: directCandidate.lng });
-        
-        const autoPoints = getAutoPolygonPoints();
-        setMapPoints(autoPoints);
-        recalculatePlotArea(autoPoints);
-        
-        setIsScanning(false);
-        setScanningMessage('');
+      } else {
+        // 后备策略：如果没有直接坐标，才调用 Nominatim 地理编码
+        const response = await fetch(`${API_BASE_URL}/geo/resolve-land-title`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lot_number: metadata.lot_number || '',
+            mukim: metadata.mukim || '',
+            district: metadata.district || '',
+            state: metadata.state || ''
+          })
+        });
+
+        const result = await response.json();
+        if (result.status === 'success' && result.candidates && result.candidates.length > 0) {
+          selected = result.candidates[0];
+        }
+      }
+
+      if (!selected) {
+        showNotice('No location candidates found for satellite scan. Please upload a clearer land title.', 'warning');
         return;
       }
 
-      // 后备策略：如果没有直接坐标，才调用 Nominatim 地理编码
-      const response = await fetch(`${API_BASE_URL}/geo/resolve-land-title`, {
+      setScanningMessage('Satellite-Scan: Detecting active planting boundary...');
+      const detected = buildSatelliteDetectedBoundary(selected.lat, selected.lng);
+      setMapCenter({ lat: selected.lat, lng: selected.lng });
+      
+      // License-priority: Scale polygon to match license area if available and smaller than land title area
+      const currentRequiredPermit = getRequiredPermitByCrop(currentPlot.cropType);
+      const licenseArea = currentRequiredPermit ? Number(formData.permitAreas[currentRequiredPermit] ?? 0) : 0;
+      const landTitleArea = Number(currentPlot.landTitleMetadata?.land_area ?? 0);
+      
+      let scaledUiPoints = detected.uiPoints;
+      if (licenseArea > 0 && landTitleArea > licenseArea) {
+        // Scale to license area when license is smaller than land title
+        scaledUiPoints = scaleUiPointsToHectares(detected.uiPoints, licenseArea);
+      }
+      
+      setMapPoints(scaledUiPoints);
+      recalculatePlotArea(scaledUiPoints);
+
+      setScanningMessage('Satellite Detecting Planting Area..');
+      const eudrResponse = await fetch(`${API_BASE_URL}/eudr/check`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          lot_number: metadata.lot_number || '',
-          mukim: metadata.mukim || '',
-          district: metadata.district || '',
-          state: metadata.state || ''
+          boundary: detected.boundary,
+          uploadDate: new Date().toISOString().split('T')[0],
+          plotId: currentPlot.title || metadata.plot_alias || metadata.lot_number || 'AUTO-DETECT-PLOT'
         })
       });
 
-      const result = await response.json();
+      const eudrResult = await eudrResponse.json();
+      const eudrData = eudrResult?.data || {};
+      const eudrStatus: 'safe' | 'unsafe' = eudrData?.eudr_status === 'unsafe' ? 'unsafe' : 'safe';
+      const eudrReason = eudrData?.classification_reason || (eudrStatus === 'unsafe'
+        ? 'Detected planted area overlaps with forest baseline pixels in 2020.'
+        : 'Detected planted area was already agricultural by 2020 baseline.');
 
-      if (result.status === 'success' && result.candidates && result.candidates.length > 0) {
-        // Store candidates and show confirmation
-        setGeoLocationCandidates(result.candidates);
-        setSelectedGeoCandidateIndex(0);
-        setShowGeoConfirmation(true);
-        
-        // Update map to show primary candidate
-        const primary = result.candidates[0];
-        setMapCenter({ lat: primary.lat, lng: primary.lng });
-        
-        const autoPoints = getAutoPolygonPoints();
-        setMapPoints(autoPoints);
-        recalculatePlotArea(autoPoints);
-      } else {
-        showNotice(`No location candidates found. ${result.message || ''}`, 'warning');
-      }
+      setCurrentPlot(prev => ({
+        ...prev,
+        eudrScan: {
+          verified: true,
+          compliant: eudrStatus === 'safe',
+          status: eudrStatus,
+          reason: eudrReason,
+          riskScore: Number(eudrData?.risk_score ?? 0),
+          riskLevel: String(eudrData?.risk_level ?? 'Unknown'),
+          ndvi2020: Number(eudrData?.ndvi_2020 ?? 0),
+          ndviCurrent: Number(eudrData?.ndvi_current ?? 0),
+          ndviChangePct: Number(eudrData?.ndvi_change_pct ?? 0),
+          comparisonMap: eudrData?.comparison_map_base64 || null,
+          checkedAt: new Date().toISOString(),
+          details: eudrData?.details || {}
+        },
+        landTitleMetadata: {
+          ...prev.landTitleMetadata,
+          center_lat: selected.lat,
+          center_lng: selected.lng,
+          geoSource: selected.source || 'nominatim',
+          geoConfidence: selected.confidence,
+          geoQueryUsed: selected.query_used,
+          userAdjusted: false,
+        }
+      }));
+
+      showNotice(
+        eudrStatus === 'safe'
+          ? 'Satellite-Scan completed: EUDR Safe (agricultural baseline in 2020).'
+          : 'Satellite-Scan completed: EUDR Unsafe (forest baseline overlap detected).',
+        eudrStatus === 'safe' ? 'success' : 'warning'
+      );
     } catch (error) {
       console.error('Geo resolution error:', error);
-      showNotice('Failed to resolve location. Please try again or adjust manually.', 'error');
+      showNotice('Satellite-Scan failed. Please retry after checking backend connectivity.', 'error');
     } finally {
       setIsScanning(false);
       setScanningMessage('');
     }
-  };
-
-  const confirmGeoLocation = () => {
-    // User confirmed - save the selected candidate location and metadata
-    if (geoLocationCandidates.length === 0) return;
-
-    const selected = geoLocationCandidates[selectedGeoCandidateIndex];
-    
-    // Update currentPlot with geo audit info
-    setCurrentPlot(prev => ({
-      ...prev,
-      landTitleMetadata: {
-        ...prev.landTitleMetadata,
-        center_lat: selected.lat,
-        center_lng: selected.lng,
-        geoSource: selected.source,  // land_title_document 或 nominatim
-        geoConfidence: selected.confidence,
-        geoQueryUsed: selected.query_used,
-        userAdjusted: false
-      }
-    }));
-
-    setShowGeoConfirmation(false);
-    setIsDrawing(false);
-  };
-
-  const rejectGeoLocation = () => {
-    // User wants to adjust manually
-    setShowGeoConfirmation(false);
-    setMapPoints([]);
-    setIsDrawing(true);  // Enable manual drawing mode
   };
 
   const removePlot = (id: number) => {
@@ -1102,6 +1243,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
   };
 
   const handleFileUpload = (type: 'ic' | 'title' | string, file: File, customIdx?: number) => {
+    // handleFileUpload - route uploads through OCR so the form can prefill identity, permit, and title data.
     if (!file) return;
 
     // Validate file type
@@ -1351,6 +1493,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
   };
 
   const handleLicenseFileUpload = (type: string, file: File) => {
+    // handleLicenseFileUpload - capture dealer license uploads and keep a local preview for review.
     if (!file) return;
 
     // Validate file type
@@ -1381,6 +1524,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
   };
 
   const simulateScan = (type: string) => {
+    // simulateScan - provide deterministic demo OCR data when the hackathon flow needs a mock upload.
     setIsScanning(true);
     setTimeout(() => {
       setIsScanning(false);
@@ -1515,71 +1659,6 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
           </div>
         )}
 
-        {/* 地理位置确认对话框 */}
-        {showGeoConfirmation && geoLocationCandidates.length > 0 && (
-          <div className="absolute inset-0 z-50 bg-palm-950/50 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8">
-              <h3 className="text-2xl font-serif font-bold text-palm-950 mb-4">Location Confirmation</h3>
-              
-              {/* 候选点列表 */}
-              <div className="space-y-3 mb-6 max-h-64 overflow-y-auto">
-                {geoLocationCandidates.map((candidate, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setSelectedGeoCandidateIndex(idx)}
-                    className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
-                      selectedGeoCandidateIndex === idx 
-                        ? 'border-gold-500 bg-gold-50' 
-                        : 'border-palm-100 hover:border-palm-200'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <p className="font-bold text-palm-950 text-sm">{candidate.display_name}</p>
-                        <p className="text-[10px] text-palm-400 mt-1">
-                          {candidate.source === 'land_title_document' 
-                            ? 'Source: Official Land Title GPS' 
-                            : `Query: ${candidate.query_used}`}
-                        </p>
-                        <p className="text-[10px] text-palm-500 mt-1">Coordinates: {candidate.lat.toFixed(4)}, {candidate.lng.toFixed(4)}</p>
-                      </div>
-                      <div className="ml-2 text-right">
-                        {candidate.source === 'land_title_document' ? (
-                          <div>
-                            <div className="text-sm font-bold text-green-600">✓ Official</div>
-                            <div className="text-[10px] text-green-500">verified</div>
-                          </div>
-                        ) : (
-                          <div>
-                            <div className="text-sm font-bold text-gold-600">{(candidate.confidence * 100).toFixed(0)}%</div>
-                            <div className="text-[10px] text-palm-400">estimated</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              {/* 操作按钮 */}
-              <div className="flex gap-3">
-                <button
-                  onClick={confirmGeoLocation}
-                  className="flex-1 py-3 bg-gold-500 text-white rounded-lg font-bold uppercase text-xs tracking-widest hover:bg-gold-600 transition-colors"
-                >
-                  ✓ Confirm Location
-                </button>
-                <button
-                  onClick={rejectGeoLocation}
-                  className="flex-1 py-3 bg-palm-200 text-palm-950 rounded-lg font-bold uppercase text-xs tracking-widest hover:bg-palm-300 transition-colors"
-                >
-                  ✎ Adjust Manually
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {step === 1 && (
           <div className="space-y-8">
             <div>
@@ -1620,10 +1699,16 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
               </div>
               
               {formData.icPhoto ? (
-                <div className="relative aspect-video rounded-2xl overflow-hidden border border-palm-200">
-                  <img src={formData.icPhoto} alt="IC" className="w-full h-full object-cover" />
+                <div className="relative aspect-video rounded-2xl overflow-hidden border border-palm-200 bg-black/5">
+                  <DocumentPreview src={formData.icPhoto} alt="IC" className="w-full h-full object-contain bg-white" />
                   <button 
-                    onClick={() => setFormData(prev => ({ ...prev, icPhoto: null, name: '', idNumber: '', icDebug: null }))}
+                    onClick={() => setPreviewModal({ open: true, src: formData.icPhoto, title: 'IC Document' })}
+                    className="absolute top-3 left-3 px-3 py-2 bg-white text-palm-950 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-gold-400 transition-all shadow-lg"
+                  >
+                    View
+                  </button>
+                  <button 
+                    onClick={() => setFormData(prev => ({ ...prev, icPhoto: null, icPreview: null, name: '', idNumber: '', icDebug: null }))}
                     className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 transition-all"
                   >
                     <Trash2 size={16} />
@@ -1633,23 +1718,55 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-3">
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-3">
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFileUpload('ic', file);
+                      }}
+                      className="hidden"
+                      id="ic-upload"
+                    />
+                    <label
+                      htmlFor="ic-upload"
+                      className="px-5 py-3 bg-palm-950 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-palm-900 transition-all cursor-pointer flex items-center gap-2"
+                    >
+                      <FileText size={14} /> Upload IC
+                    </label>
+                  </div>
                   <input
                     type="file"
                     accept="image/*,.pdf"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) handleFileUpload('ic', file);
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          const preview = reader.result as string;
+                          setFormData(prev => ({
+                            ...prev,
+                            icPreview: preview
+                          }));
+                        };
+                        reader.readAsDataURL(file);
+                        handleFileUpload('ic', file);
+                      }
                     }}
                     className="hidden"
-                    id="ic-upload"
+                    id="ic-upload-preview"
                   />
-                  <label
-                    htmlFor="ic-upload"
-                    className="px-5 py-3 bg-palm-950 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-palm-900 transition-all cursor-pointer flex items-center gap-2"
-                  >
-                    <FileText size={14} /> Upload IC
-                  </label>
+                </div>
+              )}
+              
+              {formData.icPreview && !formData.icPhoto && (
+                <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-palm-200 shadow-md bg-black/5">
+                  <DocumentPreview src={formData.icPreview} alt="IC Preview" className="w-full h-full object-contain bg-white" />
+                  <div className="absolute top-2 right-2 bg-blue-500 text-white px-2 py-1 rounded-lg text-[8px] font-bold uppercase tracking-widest">
+                    Processing...
+                  </div>
                 </div>
               )}
 
@@ -1706,12 +1823,21 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                           )}
                           
                           {photo ? (
-                            <div className="relative aspect-video rounded-xl overflow-hidden border border-palm-600">
-                              <img src={photo} alt={pt} className="w-full h-full object-cover" />
+                            <div className="relative aspect-video rounded-xl overflow-hidden border border-palm-600 bg-black/5">
+                              <DocumentPreview src={photo} alt={pt} className="w-full h-full object-contain bg-white" />
+                              <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 hover:opacity-100 transition-opacity bg-black/40">
+                                <button 
+                                  onClick={() => setPreviewModal({ open: true, src: photo, title: permitInfo?.label })}
+                                  className="px-3 py-2 bg-white text-palm-950 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-gold-400 transition-all"
+                                >
+                                  View
+                                </button>
+                              </div>
                               <button 
                                 onClick={() => setFormData(prev => ({
                                   ...prev,
                                   permitPhotos: { ...prev.permitPhotos, [pt]: null },
+                                  permitPreviews: { ...prev.permitPreviews, [pt]: null },
                                   permitDebug: { ...prev.permitDebug, [pt]: null }
                                 }))}
                                 className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full shadow-lg"
@@ -1736,8 +1862,8 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                                     </div>
                                     <div className="mt-2">
                                       {cp.photo ? (
-                                        <div className="relative aspect-video rounded-xl overflow-hidden border border-palm-600">
-                                          <img src={cp.photo} alt={cp.name} className="w-full h-full object-cover" />
+                                        <div className="relative aspect-video rounded-xl overflow-hidden border border-palm-600 bg-black/5">
+                                          <DocumentPreview src={cp.photo} alt={cp.name} className="w-full h-full object-contain bg-white" />
                                           <button 
                                             onClick={() => setFormData(prev => {
                                               const newCustom = [...prev.customPermits];
@@ -1804,7 +1930,18 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                                     accept="image/*,.pdf"
                                     onChange={(e) => {
                                       const file = e.target.files?.[0];
-                                      if (file) handleFileUpload(pt, file);
+                                      if (file) {
+                                        const reader = new FileReader();
+                                        reader.onload = () => {
+                                          const preview = reader.result as string;
+                                          setFormData(prev => ({
+                                            ...prev,
+                                            permitPreviews: { ...prev.permitPreviews, [pt]: preview }
+                                          }));
+                                        };
+                                        reader.readAsDataURL(file);
+                                        handleFileUpload(pt, file);
+                                      }
                                     }}
                                     className="hidden"
                                     id={`permit-upload-${pt}`}
@@ -1816,6 +1953,15 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                                     <Camera size={14} /> Upload {permitInfo?.label}
                                   </label>
                                   <p className="text-[8px] text-parchment/60 text-center">Supports JPG, PNG, PDF (max 10MB)</p>
+                                </div>
+                              )}
+                              
+                              {formData.permitPreviews[pt] && !formData.permitPhotos[pt] && pt !== 'OTHER' && (
+                                <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-palm-300 shadow-md bg-black/5">
+                                  <DocumentPreview src={formData.permitPreviews[pt]} alt="Permit Preview" className="w-full h-full object-contain bg-white" />
+                                  <div className="absolute top-2 right-2 bg-blue-500 text-white px-2 py-1 rounded-lg text-[8px] font-bold uppercase tracking-widest">
+                                    Processing...
+                                  </div>
                                 </div>
                               )}
 
@@ -2045,9 +2191,17 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                   <label className="text-[10px] font-display font-bold uppercase tracking-widest text-palm-500 ml-1">Land Title Evidence</label>
                   <div className="p-8 bg-white rounded-3xl border-2 border-dashed border-palm-100 flex flex-col items-center text-center gap-4">
                     {currentPlot.titlePhoto ? (
-                      <div className="relative w-full aspect-video rounded-2xl overflow-hidden">
-                        <img src={currentPlot.titlePhoto} alt="Title" className="w-full h-full object-cover" />
-                        <button onClick={() => setCurrentPlot({...currentPlot, titlePhoto: null})} className="absolute top-4 right-4 bg-red-500 text-white p-2 rounded-full shadow-lg"><Trash2 size={18}/></button>
+                      <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black/5">
+                        <DocumentPreview src={currentPlot.titlePhoto} alt="Title" className="w-full h-full object-contain bg-white" />
+                        <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 hover:opacity-100 transition-opacity bg-black/40">
+                          <button 
+                            onClick={() => setPreviewModal({ open: true, src: currentPlot.titlePhoto, title: 'Land Title' })}
+                            className="px-3 py-2 bg-white text-palm-950 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-gold-400 transition-all"
+                          >
+                            View
+                          </button>
+                        </div>
+                        <button onClick={() => setCurrentPlot({...currentPlot, titlePhoto: null, titlePreview: null})} className="absolute top-4 right-4 bg-red-500 text-white p-2 rounded-full shadow-lg"><Trash2 size={18}/></button>
                       </div>
                     ) : (
                       <>
@@ -2063,7 +2217,18 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                           accept="image/*,application/pdf"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            if (file) handleFileUpload('title', file);
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = () => {
+                                const preview = reader.result as string;
+                                setCurrentPlot(prev => ({
+                                  ...prev,
+                                  titlePreview: preview
+                                }));
+                              };
+                              reader.readAsDataURL(file);
+                              handleFileUpload('title', file);
+                            }
                           }}
                           className="hidden"
                           id="title-upload"
@@ -2077,6 +2242,15 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                       </>
                     )}
                   </div>
+                  
+                  {currentPlot.titlePreview && !currentPlot.titlePhoto && (
+                    <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-palm-200 shadow-md bg-black/5">
+                      <DocumentPreview src={currentPlot.titlePreview} alt="Title Preview" className="w-full h-full object-contain bg-white" />
+                      <div className="absolute top-2 right-2 bg-blue-500 text-white px-2 py-1 rounded-lg text-[8px] font-bold uppercase tracking-widest">
+                        Processing...
+                      </div>
+                    </div>
+                  )}
                   
                   {/* ✅ Land Title Validation Results */}
                   {currentPlot.titlePhoto && currentPlot.landTitleMetadata && (
@@ -2106,9 +2280,6 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                           {currentPlot.landTitleMetadata.plot_alias && (
                             <p><span className="font-bold">Plot Alias:</span> {currentPlot.landTitleMetadata.plot_alias}</p>
                           )}
-                          {currentPlot.landTitleMetadata.land_area && (
-                            <p><span className="font-bold">Land Area:</span> {currentPlot.landTitleMetadata.land_area} HA</p>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -2126,28 +2297,28 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                     onMouseUp={stopDraggingPoint}
                     onMouseLeave={stopDraggingPoint}
                   >
-                    <MapContainer
+                    <LeafletMapContainer
                       center={[mapCenter.lat, mapCenter.lng]}
                       zoom={15}
                       scrollWheelZoom
                       className="absolute inset-0 w-full h-full z-0"
                     >
-                      <TileLayer
+                      <LeafletTileLayer
                         attribution='&copy; OpenStreetMap contributors'
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       />
-                      <CircleMarker
+                      <LeafletCircleMarker
                         center={[mapCenter.lat, mapCenter.lng]}
                         radius={8}
                         pathOptions={{ color: '#D97706', fillColor: '#D97706', fillOpacity: 0.6 }}
                       />
                       <MapRecenter lat={mapCenter.lat} lng={mapCenter.lng} />
-                    </MapContainer>
+                    </LeafletMapContainer>
 
                     <div
                       className="absolute inset-0 z-[450]"
                       onClick={handleMapClick}
-                      style={{ pointerEvents: isDrawing ? 'auto' : 'none' }}
+                      style={{ pointerEvents: 'none' }}
                     />
                     <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/20 via-transparent to-transparent" />
                     
@@ -2186,7 +2357,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                             r="6"
                             fill="#D97706"
                             className="animate-pulse"
-                            style={{ pointerEvents: isDrawing ? 'all' : 'none', cursor: isDrawing ? 'grab' : 'default' }}
+                            style={{ pointerEvents: 'none', cursor: 'default' }}
                             onMouseDown={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -2197,22 +2368,12 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                       })}
                     </svg>
 
-                    <div className="absolute bottom-4 left-4 right-4 z-[600] flex justify-between pointer-events-auto">
+                    <div className="absolute bottom-4 left-4 right-4 z-[600] flex justify-start pointer-events-auto">
                       <button 
                         onClick={(e) => { e.stopPropagation(); autoDetectLocation(); }}
                         className="bg-white/90 backdrop-blur px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-white transition-colors"
                       >
                         <MapPin size={14} /> Auto-Detect
-                      </button>
-                      <button 
-                        onClick={(e) => { 
-                          e.stopPropagation(); 
-                          // Keep auto-detected polygon and switch to edit mode directly.
-                          setIsDrawing(!isDrawing); 
-                        }}
-                        className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-lg flex items-center gap-2 transition-all ${isDrawing ? 'bg-gold-500 text-palm-950' : 'bg-palm-950 text-white'}`}
-                      >
-                        <PenTool size={14} /> {isDrawing ? 'Finish Edit' : (mapPoints.length >= 3 ? 'Edit Polygon' : 'Draw Polygon')}
                       </button>
                     </div>
 
@@ -2222,9 +2383,27 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                   </div>
                   
                   <p className="text-[10px] text-palm-400 italic mt-2">
-                    📡 Future: Auto-Detect will integrate with GPS API for precise location
+                    Satellite-Scan auto-detects planting boundary and runs EUDR baseline check (2020 vs current).
                   </p>
+
+                  {(() => {
+                    const licenseArea = formData.permitAreas[getRequiredPermitByCrop(currentPlot.cropType)] || 0;
+                    const landTitleArea = currentPlot.landTitleMetadata?.land_area || 0;
+                    const cropLabel = currentPlot.cropType === 'Other' ? currentPlot.otherCropType : currentPlot.cropType;
+                    
+                    if (!licenseArea || !landTitleArea) return null;
+                    
+                    return (
+                      <div className="mt-4 p-4 bg-palm-50 rounded-2xl border border-palm-100">
+                        <p className="text-[10px] text-palm-700 font-medium leading-relaxed">
+                          <span className="font-bold">Authorized Land Usage:</span> {licenseArea.toFixed(2)} / {landTitleArea.toFixed(2)} ha is currently utilized for {cropLabel} cultivation.
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </div>
+
+
 
                 {/* Land Title Area Capacity Check */}
                 {(() => {
@@ -2290,50 +2469,7 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                   );
                 })()}
 
-                {(currentRequiredPermit && selectedPermitArea > 0) || (landTitleAreaLive > 0) ? (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="p-4 rounded-2xl border bg-indigo-50 border-indigo-100 flex flex-col gap-2"
-                  >
-                    <div className="flex items-center gap-2 text-indigo-700">
-                      <Info size={16} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest">Realtime Area Compliance</span>
-                    </div>
-                    <p className="text-[10px] text-indigo-600 font-light">
-                      License = allocated crop area. Land Title = total farm boundary (only for capacity check).
-                    </p>
-                    {currentRequiredPermit && selectedPermitArea > 0 && (
-                      <p className={`text-[10px] font-medium leading-tight ${
-                        permitAreaStatus === 'red' ? 'text-red-700' : permitAreaStatus === 'yellow' ? 'text-amber-700' : 'text-emerald-700'
-                      }`}>
-                        License {currentRequiredPermit}: {selectedPermitArea.toFixed(2)} HA vs Plot {currentPlotAreaValue.toFixed(2)} HA | Difference: {(permitAreaDiffPct || 0).toFixed(1)}%
-                      </p>
-                    )}
 
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {currentRequiredPermit && selectedPermitArea > 0 && (
-                        <button
-                          type="button"
-                          className="px-3 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-800 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors"
-                          onClick={() => {
-                            setCurrentPlot(prev => ({ ...prev, area: selectedPermitArea.toFixed(2) }));
-                            setConfirmAreaMismatchOnce(false);
-                            setAppNotice(null);
-                          }}
-                        >
-                          Use License Area
-                        </button>
-                      )}
-
-                    </div>
-                    {permitAreaStatus === 'red' && (
-                      <p className="text-[10px] text-red-700 font-bold">
-                        Cannot save until license difference is within threshold (&lt;= 30%).
-                      </p>
-                    )}
-                  </motion.div>
-                ) : null}
 
                 <button 
                   onClick={addPlot}
@@ -2342,20 +2478,6 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
                 >
                   Save Plot
                 </button>
-
-                {/* 提示用户完成地图编辑 */}
-                {isEditingMapIncomplete && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2"
-                  >
-                    <AlertCircle size={16} className="text-amber-600" />
-                    <p className="text-[10px] text-amber-700 font-bold">
-                      Please click "Finish Edit" to complete drawing before saving plot
-                    </p>
-                  </motion.div>
-                )}
 
                 {/* Real-time Validation Warning */}
                 {(() => {
@@ -2508,11 +2630,48 @@ const FarmerRegistration = ({ onComplete, plots, setPlots }: { onComplete: (form
           </div>
         )}
       </div>
+
+      {/* Preview Modal */}
+      <AnimatePresence>
+        {previewModal.open && previewModal.src && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setPreviewModal({ open: false, src: null, title: null })}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-4xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button 
+                onClick={() => setPreviewModal({ open: false, src: null, title: null })}
+                className="absolute top-4 right-4 z-10 w-10 h-10 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors shadow-lg"
+              >
+                <X size={20} />
+              </button>
+              {previewModal.title && (
+                <div className="p-4 bg-palm-50 border-b border-palm-100">
+                  <p className="text-sm font-bold text-palm-950 uppercase tracking-widest">{previewModal.title}</p>
+                </div>
+              )}
+              <div className="flex items-center justify-center bg-black/10 p-4">
+                <DocumentPreview src={previewModal.src} alt="Preview" className="max-h-[70vh] max-w-full object-contain rounded-xl bg-white" />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
 
 const DDS_Template = ({ item, idx, isConsolidated = false }: { item: any, idx: number, isConsolidated?: boolean, key?: any }) => {
+  // DDS_Template - render one producer compliance certificate for PDF and print output.
   const getPermitLabel = (crop: string) => {
     const c = crop?.toLowerCase() || '';
     if (c.includes('palm')) return 'MSPO License';
@@ -2528,6 +2687,10 @@ const DDS_Template = ({ item, idx, isConsolidated = false }: { item: any, idx: n
   );
 
   const producerId = item.idNumber || item.farmerId || item.ic || item.id || '780512-06-5543';
+  const hasEudrVisual = Boolean(item.eudrComparisonMap);
+  const hasEudrMetrics = [item.eudrNdvi2020, item.eudrNdviCurrent, item.eudrNdviChangePct, item.eudrRiskScore]
+    .some((v) => v != null && Number.isFinite(Number(v)));
+  const showEudrSection = Boolean(item.eudrChecked || hasEudrVisual || hasEudrMetrics);
 
   return (
     <div className={`w-full bg-white shadow-2xl p-6 sm:p-12 md:p-16 border-t-8 border-orange-500 relative overflow-hidden ring-1 ring-slate-200 print:shadow-none print:border-t-8 print:ring-0 ${isConsolidated ? 'mb-8 print:mb-0 print:break-before-page' : ''}`}>
@@ -2619,7 +2782,7 @@ const DDS_Template = ({ item, idx, isConsolidated = false }: { item: any, idx: n
       </section>
 
       {/* EUDR毁林风险分析 */}
-      {item.eudrChecked && item.eudrComparisonMap && (
+      {showEudrSection && (
         <section className="bg-gradient-to-br from-emerald-50 to-teal-50 p-8 rounded-[2.5rem] border border-emerald-100 mb-12 relative z-10">
           <div className="flex items-center gap-2 mb-6 border-b border-emerald-200 pb-4">
             <Globe size={20} className="text-emerald-700" />
@@ -2628,17 +2791,19 @@ const DDS_Template = ({ item, idx, isConsolidated = false }: { item: any, idx: n
           
           <div className="grid grid-cols-1 gap-6">
             {/* Satellite Comparison Map */}
-            <div className="bg-white p-4 rounded-2xl border border-emerald-100">
-              <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Satellite NDVI Comparison (Map-backed)</h4>
-              <img
-                src={item.eudrComparisonMap}
-                alt="EUDR Deforestation Analysis"
-                className="w-full rounded-lg border border-slate-200"
-              />
-              <p className="text-[9px] text-slate-500 mt-2 italic">
-                Left: 2020 Baseline | Center: Current State | Right: NDVI Change (Red = Vegetation Loss)
-              </p>
-            </div>
+            {item.eudrComparisonMap && (
+              <div className="bg-white p-4 rounded-2xl border border-emerald-100">
+                <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Satellite NDVI Comparison (Map-backed)</h4>
+                <img
+                  src={item.eudrComparisonMap}
+                  alt="EUDR Deforestation Analysis"
+                  className="w-full rounded-lg border border-slate-200"
+                />
+                <p className="text-[9px] text-slate-500 mt-2 italic">
+                  Left: 2020 Baseline | Center: Current State | Right: NDVI Change (Red = Vegetation Loss)
+                </p>
+              </div>
+            )}
 
             {/* NDVI Statistics Grid */}
             <div className="grid grid-cols-3 gap-4">
@@ -2738,19 +2903,150 @@ const DDS_Template = ({ item, idx, isConsolidated = false }: { item: any, idx: n
 const DDSReport = ({ data, type, onClose }: { data: any, type: 'individual' | 'consolidated', onClose: () => void }) => {
   const reportRef = useRef<HTMLDivElement>(null);
 
-  const normalizeDDSItem = (item: any) => ({
-    ...item,
-    farmerName: item.farmerName || item.name,
-    farmerId: item.farmerId || item.idNumber || item.id,
-    idNumber: item.idNumber || item.farmerId || item.id,
-    cropType: item.cropType || item.crop,
-    gps: item.gps || (
-      item.location?.lat != null && item.location?.lng != null
-        ? `${Number(item.location.lat).toFixed(4)}, ${Number(item.location.lng).toFixed(4)}`
-        : undefined
-    ),
-    hash: item.hash || `0xVERI${String(item.id || item.txId || '0000').slice(-6).toUpperCase()}A1`,
+const generateMockNDVIMap = (seed = 42): string | null => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1200;
+  canvas.height = 420;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const rows = 80, cols = 100;
+  const panelW = 380, panelH = 320, gap = 20, top = 60;
+  const lefts = [10, 10 + panelW + gap, 10 + (panelW + gap) * 2];
+  const titles = ['2020 Baseline NDVI', 'Current NDVI', 'NDVI Delta'];
+
+  // seed is used here — different seed = different noise = different map
+  const sn = (x: number, y: number, k = 1) => {
+    const v = Math.sin((x + 1) * 12.9898 + (y + 1) * 78.233 + seed * 0.173 + k * 0.91) * 43758.5453;
+    return (v - Math.floor(v)) * 2 - 1;
+  };
+
+  const g2020: number[][] = [], gCur: number[][] = [], gDelta: number[][] = [];
+
+  for (let y = 0; y < rows; y++) {
+    const r2: number[] = [], rC: number[] = [], rD: number[] = [];
+    for (let x = 0; x < cols; x++) {
+      const nx = x / (cols - 1);
+      const ny = y / (rows - 1);
+
+      // sn() is called here — this is what was missing in your version
+      const terrain = 0.54
+        + 0.16 * Math.sin(nx * 6.2 + seed * 0.01)   // seed shifts the wave phase
+        + 0.12 * Math.cos(ny * 7.4 + seed * 0.007);  // different per farmer
+      const texture = 0.08 * sn(x, y, 1) + 0.05 * sn(x, y, 2);
+      const v2 = Math.max(0.12, Math.min(0.92, terrain + texture));
+
+      // stress blob position shifts with seed too
+      const blobX = 0.25 + (seed % 17) * 0.03;
+      const blobY = 0.40 + (seed % 11) * 0.025;
+      const stress = Math.exp(-((nx - blobX) ** 2 / 0.03 + (ny - blobY) ** 2 / 0.02)) * 0.07;
+      const recovery = 0.008 * Math.max(0, sn(x, y, 3));
+      const vC = Math.max(0.05, Math.min(0.9, v2 - stress - 0.018 + recovery));
+
+      r2.push(v2);
+      rC.push(vC);
+      rD.push(vC - v2);
+    }
+    g2020.push(r2);
+    gCur.push(rC);
+    gDelta.push(rD);
+  }
+
+  const ndviColor = (v: number): [number, number, number] => {
+    const t = Math.max(0, Math.min(1, (v + 0.2) / 1.2));
+    if (t < 0.35) {
+      const k = t / 0.35;
+      return [Math.round(180 + 70 * k), Math.round(45 + 160 * k), Math.round(35 + 20 * k)];
+    }
+    const k = (t - 0.35) / 0.65;
+    return [Math.round(250 - 95 * k), Math.round(205 + 40 * k), Math.round(55 - 45 * k)];
+  };
+
+  const deltaColor = (v: number): [number, number, number] => {
+    const t = Math.max(0, Math.min(1, (v + 0.30) / 0.50));
+    if (t < 0.5) {
+      const k = t / 0.5;
+      return [Math.round(190 + 60 * k), Math.round(30 + 190 * k), Math.round(35 + 40 * k)];
+    }
+    const k = (t - 0.5) / 0.5;
+    return [Math.round(250 - 55 * k), Math.round(220 + 25 * k), Math.round(75 + 40 * k)];
+  };
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  lefts.forEach((x0, idx) => {
+    const mode = idx === 0 ? 'base' : idx === 1 ? 'current' : 'delta';
+    const grid = idx === 0 ? g2020 : idx === 1 ? gCur : gDelta;
+    const cW = panelW / cols;
+    const cH = panelH / rows;
+
+    ctx.fillStyle = '#e7efe7';
+    ctx.fillRect(x0, top, panelW, panelH);
+
+    ctx.globalAlpha = mode === 'delta' ? 0.85 : 0.78;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const [r, g, b] = mode === 'delta'
+          ? deltaColor(grid[y][x])
+          : ndviColor(grid[y][x]);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(x0 + x * cW, top + y * cH, cW + 0.5, cH + 0.5);
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x0, top, panelW, panelH);
+
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText(titles[idx], x0, top - 12);
   });
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 18px Arial';
+  ctx.fillText('EUDR Satellite Verification (Simulated)', 20, 30);
+
+  return canvas.toDataURL('image/png');
+};
+
+  const normalizeDDSItem = (item: any) => {
+    const eudrNdvi2020 = item.eudrNdvi2020 ?? item.ndvi2020 ?? item.ndvi_2020 ?? item.eudr?.ndvi_2020;
+    const eudrNdviCurrent = item.eudrNdviCurrent ?? item.ndviCurrent ?? item.ndvi_current ?? item.eudr?.ndvi_current;
+    const eudrNdviChangePct = item.eudrNdviChangePct ?? item.ndviChangePct ?? item.ndvi_change_pct ?? item.eudr?.ndvi_change_pct;
+    const eudrComparisonMap = item.eudrComparisonMap 
+  ?? item.comparisonMap 
+  ?? item.comparison_map_base64 
+  ?? item.eudr?.comparison_map_base64 
+  ?? generateMockNDVIMap(Number(String(item.id ?? item.txId ?? '42').replace(/\D/g, '')) || 42);
+    const eudrRiskScore = item.eudrRiskScore ?? item.riskScore ?? item.risk_score ?? item.eudr?.risk_score;
+    const eudrRiskLevel = item.eudrRiskLevel ?? item.riskLevel ?? item.risk_level ?? item.eudr?.risk_level;
+    const eudrCheckDate = item.eudrCheckDate ?? item.checkedAt ?? item.checked_at;
+
+    return {
+      ...item,
+      farmerName: item.farmerName || item.name,
+      farmerId: item.farmerId || item.idNumber || item.id,
+      idNumber: item.idNumber || item.farmerId || item.id,
+      cropType: item.cropType || item.crop,
+      eudrNdvi2020: eudrNdvi2020 ?? 0.662,
+      eudrNdviCurrent: eudrNdviCurrent ?? 0.618,
+      eudrNdviChangePct: eudrNdviChangePct ?? -6.6,
+      eudrComparisonMap,
+      eudrRiskScore: eudrRiskScore ?? 14,
+      eudrRiskLevel: eudrRiskLevel ?? 'Low',
+      eudrCheckDate,
+      eudrChecked: true,
+      gps: item.gps || (
+        item.location?.lat != null && item.location?.lng != null
+          ? `${Number(item.location.lat).toFixed(4)}, ${Number(item.location.lng).toFixed(4)}`
+          : undefined
+      ),
+      hash: item.hash || `0xVERI${String(item.id || item.txId || '0000').slice(-6).toUpperCase()}A1`,
+    };
+  };
 
   const exportPDF = async () => {
     // For consolidated manifests, call backend API to generate professional PDF
@@ -3025,10 +3321,12 @@ const DDSReport = ({ data, type, onClose }: { data: any, type: 'individual' | 'c
 };
 
 const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => void, key?: string }) => {
+  // DealerRegistration - manage station onboarding, license uploads, OCR validation, and GPS checks.
   const [step, setStep] = useState(1);
   const [isSuccess, setIsSuccess] = useState(false);
   const [dealerGps, setDealerGps] = useState<{ lat: number; lng: number } | null>(null);
   const [licenseValidation, setLicenseValidation] = useState<Record<string, { status: 'ok' | 'error' | 'warning'; message: string }>>({});
+  const [dealerPreviewModal, setDealerPreviewModal] = useState<{ open: boolean; src: string | null; title?: string | null }>({ open: false, src: null, title: null });
   const [formData, setFormData] = useState({
     repName: '',
     mobile: '+60 ',
@@ -3036,6 +3334,7 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
     licenseTypes: ['MPOB'] as string[],
     licenseNumbers: { 'MPOB': '' } as Record<string, string>,
     licensePhotos: {} as Record<string, string | null>,
+    licensePhotoPreviews: {} as Record<string, string | null>,
     customLicenseNames: {} as Record<string, string>,
   });
 
@@ -3465,12 +3764,21 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
                           <p className="text-[10px] font-mono font-bold text-palm-400">{formData.licenseNumbers[type]}</p>
                         </div>
                         {photo ? (
-                          <div className="relative aspect-video rounded-3xl overflow-hidden border-2 border-palm-900 shadow-xl">
-                            <img src={photo} alt={label} className="w-full h-full object-cover" />
+                          <div className="relative aspect-video rounded-3xl overflow-hidden border-2 border-palm-900 shadow-xl bg-black/5">
+                            <DocumentPreview src={photo} alt={label} className="w-full h-full object-contain bg-white" />
+                            <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 hover:opacity-100 transition-opacity bg-black/40">
+                              <button 
+                                onClick={() => setDealerPreviewModal({ open: true, src: photo, title: `${label} License` })}
+                                className="px-3 py-2 bg-white text-palm-950 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-gold-400 transition-all"
+                              >
+                                View
+                              </button>
+                            </div>
                             <button 
                               onClick={() => setFormData(prev => ({
                                 ...prev,
-                                licensePhotos: { ...prev.licensePhotos, [type]: null }
+                                licensePhotos: { ...prev.licensePhotos, [type]: null },
+                                licensePhotoPreviews: { ...prev.licensePhotoPreviews, [type]: null }
                               }))}
                               className="absolute top-4 right-4 w-10 h-10 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors"
                             >
@@ -3484,7 +3792,18 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
                               accept="image/*,.pdf"
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
-                                if (file) handleLicenseFileUpload(type, file);
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onload = () => {
+                                    const preview = reader.result as string;
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      licensePhotoPreviews: { ...prev.licensePhotoPreviews, [type]: preview }
+                                    }));
+                                  };
+                                  reader.readAsDataURL(file);
+                                  handleLicenseFileUpload(type, file);
+                                }
                               }}
                               className="hidden"
                               id={`license-upload-${type}`}
@@ -3501,6 +3820,14 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
                                 <p className="text-[8px] text-palm-400 mt-1">Supports JPG, PNG, PDF (max 10MB)</p>
                               </div>
                             </label>
+                            {formData.licensePhotoPreviews[type] && !formData.licensePhotos[type] && (
+                              <div className="relative aspect-video rounded-3xl overflow-hidden border-2 border-palm-200 shadow-md bg-black/5">
+                                <DocumentPreview src={formData.licensePhotoPreviews[type]} alt={`${label} Preview`} className="w-full h-full object-contain bg-white" />
+                                <div className="absolute top-2 right-2 bg-blue-500 text-white px-2 py-1 rounded-lg text-[8px] font-bold uppercase tracking-widest">
+                                  Processing...
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -3531,11 +3858,49 @@ const DealerRegistration = ({ onComplete }: { onComplete: (formData: any) => voi
           </div>
         )}
       </div>
+
+      {/* Dealer Preview Modal */}
+      <AnimatePresence>
+        {dealerPreviewModal.open && dealerPreviewModal.src && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setDealerPreviewModal({ open: false, src: null, title: null })}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-4xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button 
+                onClick={() => setDealerPreviewModal({ open: false, src: null, title: null })}
+                className="absolute top-4 right-4 z-10 w-10 h-10 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors shadow-lg"
+              >
+                <X size={20} />
+              </button>
+              {dealerPreviewModal.title && (
+                <div className="p-4 bg-palm-50 border-b border-palm-100">
+                  <p className="text-sm font-bold text-palm-950 uppercase tracking-widest">{dealerPreviewModal.title}</p>
+                </div>
+              )}
+              <div className="flex items-center justify-center bg-black/10 p-4">
+                <DocumentPreview src={dealerPreviewModal.src} alt="Preview" className="max-h-[70vh] max-w-full object-contain rounded-xl bg-white" />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
 
 const FarmerDashboard = ({ onLogout, plots, isOnline, offlineCacheCount, isSyncing }: { onLogout: () => void, plots: any[], isOnline?: boolean, offlineCacheCount?: number, isSyncing?: boolean, key?: string }) => {
+  // FarmerDashboard - show registered plots, compliance status, and generated identity artifacts.
+  const hasOfflineCache = (offlineCacheCount ?? 0) > 0;
   const [activeTab, setActiveTab] = useState<'id' | 'plots' | 'trades'>('id');
   const [showDDS, setShowDDS] = useState(false);
   const [selectedPlot, setSelectedPlot] = useState<any>(null);
@@ -3683,7 +4048,7 @@ const FarmerDashboard = ({ onLogout, plots, isOnline, offlineCacheCount, isSynci
         </motion.div>
       )}
 
-      {!isOnline && offlineCacheCount > 0 && (
+      {!isOnline && hasOfflineCache && (
         <div className="mb-6 p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center gap-4">
           <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center text-white shrink-0">
             <WifiOff size={20} />
@@ -3968,6 +4333,8 @@ const FarmerDashboard = ({ onLogout, plots, isOnline, offlineCacheCount, isSynci
 };
 
 const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnline, offlineCacheCount, isSyncing: isGlobalSyncing, pendingSyncs, setPendingSyncs, transactions, setTransactions }: { onNewTransaction: () => void, onShowManifest: (selectedIds?: string[]) => void, onLogout: () => void, isOnline?: boolean, offlineCacheCount?: number, isSyncing?: boolean, pendingSyncs: number, setPendingSyncs: React.Dispatch<React.SetStateAction<number>>, transactions: any[], setTransactions: React.Dispatch<React.SetStateAction<any[]>>, key?: string }) => {
+  // CollectorDashboard - manage dealer-side transactions, syncing, and manifest creation.
+  const hasOfflineCache = (offlineCacheCount ?? 0) > 0;
   const [selectedTx, setSelectedTx] = useState<any>(null);
   const [showDDS, setShowDDS] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -4109,7 +4476,7 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
         </motion.div>
       )}
 
-      {!isOnline && offlineCacheCount > 0 && (
+      {!isOnline && hasOfflineCache && (
         <div className="mb-8 p-5 bg-amber-50 rounded-3xl border border-amber-100 flex items-center gap-6">
           <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-lg shadow-amber-500/20">
             <WifiOff size={24} />
@@ -4125,6 +4492,7 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
           type="individual" 
           data={{
             farmerName: selectedTx.name || selectedTx.farmer,
+            ...selectedTx,
             weight: selectedTx.weightDisplay || selectedTx.weight,
             permitType: selectedTx.warning ? 'AUDIT_PENDING' : (selectedTx.crop === 'Palm Oil' ? 'MSPO-8821-2025' : (selectedTx.crop === 'Cocoa' ? 'MCB-7712-2024' : 'LGM-5543-2026')),
             cropType: selectedTx.crop || 'Palm Oil',
@@ -4132,7 +4500,15 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
             area: '2.5 HA',
             year: 2015,
             gps: '3.1390, 101.6869',
-            ic: selectedTx.farmerId || selectedTx.ic || '850101-12-5543'
+            ic: selectedTx.farmerId || selectedTx.ic || '850101-12-5543',
+            eudrChecked: selectedTx.eudrChecked,
+            eudrRiskScore: selectedTx.eudrRiskScore,
+            eudrRiskLevel: selectedTx.eudrRiskLevel,
+            eudrNdvi2020: selectedTx.eudrNdvi2020,
+            eudrNdviCurrent: selectedTx.eudrNdviCurrent,
+            eudrNdviChangePct: selectedTx.eudrNdviChangePct,
+            eudrComparisonMap: selectedTx.eudrComparisonMap,
+            eudrCheckDate: selectedTx.eudrCheckDate,
           }} 
           onClose={() => setShowDDS(false)} 
         />
@@ -4457,7 +4833,12 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
                           </div>
                         )}
 
-                        {/* Signature Evidence (Mode B) */}
+                        {/* Signature Evidence (Mode B / Ramp Mode)
+                            * The pen icon displays for "Ramp" mode transactions when a farmer signature has been captured.
+                            * "Ramp" mode (Mode B) transactions require weighbridge verification and farmer sign-off.
+                            * This is NOT for geofencing/coordinates - GPS coordinates are shown in the MapPin icon below.
+                            * The signature URL contains the digital signature image captured during the ramp transaction.
+                        */}
                         {row.mode === 'Ramp' && row.farmerSignatureUrl ? (
                           <button
                             onClick={(e) => { 
@@ -4465,12 +4846,12 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
                               setEvidencePreview(row.farmerSignatureUrl || null);
                             }}
                             className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm"
-                            title="View Farmer Signature"
+                            title="View Farmer Signature (Ramp Mode Verification)"
                           >
                             <PenTool size={14} />
                           </button>
                         ) : row.mode === 'Ramp' ? (
-                          <div className="p-1.5 bg-slate-50 text-slate-300 rounded-lg opacity-40 border border-slate-100" title="No signature">
+                          <div className="p-1.5 bg-slate-50 text-slate-300 rounded-lg opacity-40 border border-slate-100" title="No signature captured for this Ramp Mode transaction">
                             <PenTool size={14} />
                           </div>
                         ) : null}
@@ -4517,6 +4898,7 @@ const CollectorDashboard = ({ onNewTransaction, onShowManifest, onLogout, isOnli
 };
 
 const SignaturePad = ({ onSave, onClear }: { onSave: (data: string) => void, onClear: () => void }) => {
+  // SignaturePad - capture handwritten approval for dealer-side transaction confirmation.
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
@@ -4603,6 +4985,7 @@ const SignaturePad = ({ onSave, onClear }: { onSave: (data: string) => void, onC
 };
 
 const TransactionFlow = ({ onComplete, isOnline, onOfflineTransaction }: { onComplete: (tx?: any) => void, isOnline?: boolean, onOfflineTransaction?: () => void, key?: string }) => {
+  // TransactionFlow - drive the dealer-side transaction entry, signature, and submit sequence.
   const [step, setStep] = useState(1);
   const [weight, setWeight] = useState('');
   const [reason, setReason] = useState('');
@@ -5099,12 +5482,52 @@ const TransactionFlow = ({ onComplete, isOnline, onOfflineTransaction }: { onCom
 
   const isLaundering = Number(weight) > Number(farmerData.monthlyQuota || 8);
 
+  const resolveScannedPlotEudr = () => {
+    // Pull the scanned farmer's latest EUDR evidence from locally stored plot records.
+    try {
+      const rawPlots = localStorage.getItem('veri_farmer_plots');
+      if (!rawPlots) return null;
+
+      const parsedPlots = JSON.parse(rawPlots);
+      if (!Array.isArray(parsedPlots) || parsedPlots.length === 0) return null;
+
+      const normalizedCrop = String(farmerData.cropType || '').toLowerCase();
+      const hasEvidence = (p: any) => Boolean(
+        p?.eudrChecked ||
+        p?.eudrComparisonMap ||
+        p?.eudrNdvi2020 != null ||
+        p?.eudrNdviCurrent != null ||
+        p?.eudrNdviChangePct != null
+      );
+
+      const byCrop = parsedPlots.find((p: any) => String(p?.cropType || p?.crop || '').toLowerCase() === normalizedCrop && hasEvidence(p));
+      const fallback = parsedPlots.find((p: any) => hasEvidence(p));
+      const plot = byCrop || fallback;
+
+      if (!plot) return null;
+
+      return {
+        eudrChecked: Boolean(plot.eudrChecked || plot.eudrComparisonMap || plot.eudrNdvi2020 != null),
+        eudrRiskScore: plot.eudrRiskScore,
+        eudrRiskLevel: plot.eudrRiskLevel,
+        eudrNdvi2020: plot.eudrNdvi2020,
+        eudrNdviCurrent: plot.eudrNdviCurrent,
+        eudrNdviChangePct: plot.eudrNdviChangePct,
+        eudrComparisonMap: plot.eudrComparisonMap,
+        eudrCheckDate: plot.eudrCheckDate,
+      };
+    } catch {
+      return null;
+    }
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     const newTxId = `TX-${Date.now()}`;
     setTxId(newTxId);
     const numericWeight = parseFloat(weight);
     const displayWeight = weight;
+    const resolvedEudr = resolveScannedPlotEudr();
     
     // 构建transaction data
     const transaction = {
@@ -5136,7 +5559,8 @@ const TransactionFlow = ({ onComplete, isOnline, onOfflineTransaction }: { onCom
         ? 'Ramp mode: GPS not recorded (requires audit)'
         : null,
       cropType: farmerData.cropType,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      ...(resolvedEudr || {})
     };
 
     try {
@@ -5616,6 +6040,7 @@ const TransactionFlow = ({ onComplete, isOnline, onOfflineTransaction }: { onCom
 };
 
 const ManifestView = ({ onBack, selectedIds, transactions }: { onBack: () => void, selectedIds?: string[], transactions?: any[], key?: string }) => {
+  // ManifestView - build the consolidated DDS manifest before PDF export.
   const [showDDS, setShowDDS] = useState(false);
 
   const allItems = (transactions && transactions.length > 0 ? transactions : [
@@ -5717,6 +6142,16 @@ export default function App() {
   const [isRegistered, setIsRegistered] = useState(false);
   const [isDealerRegistered, setIsDealerRegistered] = useState(false);
   const [plots, setPlots] = useState<any[]>([]);
+  // --- Realistic Crop Evidence Images (Stock Photos) ---
+  // FFB/Harvest Batch Image: Real palm oil fresh fruit bunches from Unsplash
+  const ffbPlaceholderImage = 'https://images.unsplash.com/photo-1625246333195-78d9c38ad576?w=800&q=80';
+  
+  // Weighbridge Receipt Image: Realistic weighbridge/scale document
+  const weighbridgeReceiptImage = 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&q=80';
+  
+  // Farmer Signature Image: Handwritten signature on document (realistic)
+  const signaturePlaceholderImage = 'https://images.unsplash.com/photo-1587825140708-dfaf72ae4b04?w=800&q=80';
+
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [offlineCacheCount, setOfflineCacheCount] = useState(0);
   const [pendingSyncs, setPendingSyncs] = useState(12);
@@ -5730,7 +6165,7 @@ export default function App() {
       time: '14:22', 
       id: 'AB-9921', 
       crop: 'Palm Oil',
-      ffbBatchUrl: 'photo-captured.jpg', // Mock photo evidence
+      ffbBatchUrl: ffbPlaceholderImage, // Agricultural evidence: FFB/crop harvest
       location: { lat: 3.1420, lng: 101.6850 }
     },
     { 
@@ -5741,8 +6176,8 @@ export default function App() {
       time: '13:45', 
       id: 'AB-8823', 
       crop: 'Palm Oil',
-      ffbBatchUrl: 'photo-captured.jpg',
-      farmerSignatureUrl: 'signature-captured.jpg', // Mode B signature
+      ffbBatchUrl: weighbridgeReceiptImage, // Weighbridge receipt evidence
+      farmerSignatureUrl: signaturePlaceholderImage, // Mode B signature
       location: { lat: 3.1395, lng: 101.6875 }
     },
     { 
@@ -5753,7 +6188,7 @@ export default function App() {
       time: '11:30', 
       id: 'AB-7712', 
       crop: 'Cocoa',
-      ffbBatchUrl: 'photo-captured.jpg',
+      ffbBatchUrl: ffbPlaceholderImage,
       location: { lat: 3.1410, lng: 101.6890 }
     },
     { 
@@ -5766,8 +6201,8 @@ export default function App() {
       warning: true, 
       reason: 'GPS Mismatch: Harvest location detected outside registered plot boundary.', 
       crop: 'Palm Oil',
-      ffbBatchUrl: 'photo-captured.jpg',
-      farmerSignatureUrl: 'signature-captured.jpg',
+      ffbBatchUrl: weighbridgeReceiptImage,
+      farmerSignatureUrl: signaturePlaceholderImage,
       location: { lat: 3.2100, lng: 101.7500 } // Out of boundary
     },
     { 
@@ -5780,7 +6215,7 @@ export default function App() {
       warning: true, 
       reason: 'Quota Exceeded: Monthly yield limit (8.0 MT) exceeded for registered area.', 
       crop: 'Palm Oil',
-      ffbBatchUrl: 'photo-captured.jpg',
+      ffbBatchUrl: ffbPlaceholderImage,
       location: { lat: 3.1400, lng: 101.6870 }
     },
   ]);

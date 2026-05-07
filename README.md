@@ -64,7 +64,7 @@ requirements.txt       # Python dependencies
 package.json           # Node.js dependencies
 ```
 
-To reset the database, simply delete the `veri_demo.db` file and restart the backend.
+The app uses a local SQLite database at `src/backend/veri_demo.db`. To reset it, delete that file and restart the backend.
 
 ---
 
@@ -88,7 +88,7 @@ After starting the backend, visit: **http://localhost:8002/docs**
 - **Python:** 3.8 or higher
 - **Node.js:** 16 or higher
 - **RAM:** Minimum 4GB
-- **Storage:** Minimum 500MB free space
+- **Storage:** Minimum 500MB free disk space for the app and SQLite database
 - **Tesseract OCR:** Required for document scanning
 
 ---
@@ -149,8 +149,9 @@ Before running the application, verify:
 - No API key is required for the system to work (optional enhancement only)
 
 **Database:**
-- SQLite database contains test/demo data only
-- In production, migrate to PostgreSQL/MySQL for better security
+- SQLite is the active database engine for local demo and testing
+- The database file is `src/backend/veri_demo.db`
+- Resetting the app data means deleting that SQLite file and restarting the backend
 
 ---
 

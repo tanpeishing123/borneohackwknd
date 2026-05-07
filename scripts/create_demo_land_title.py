@@ -44,19 +44,19 @@ def create_land_title_pdf():
     # 表单字段
     y -= 12 * mm
     fields = [
-        ("Lot Number", "123/456"),
+        ("Lot Number", "BGI/27/112"),
         ("Lot Status", "Active Registration"),
-        ("Mukim", "Keningau"),
-        ("District", "Keningau"),
-        ("State", "Sabah"),
+        ("Mukim", "Bangi"),
+        ("District", "Hulu Langat"),
+        ("State", "Selangor"),
         ("Land Area", "5.5 Hectares"),
-        ("Owner Name", "Tan Abdullah Bin Mohamed"),
+        ("Owner Name", "Ahmad Faizal Bin Rahman"),
         ("Registration Date", "15 January 2020"),
-        ("Certificate Number", "SAB-2020-001234"),
+        ("Certificate Number", "SEL-2020-001234"),
         ("Land Use", "Agricultural (Palm Oil)"),
-        ("GPS Coordinates", "5.28°N 115.23°E"),
-        ("Adjacent Lot 1", "124/456 - Category A"),
-        ("Adjacent Lot 2", "122/456 - Category A"),
+        ("GPS Coordinates", "2.9185°N 101.7854°E"),
+        ("Adjacent Lot 1", "BGI/28/112 - Category A"),
+        ("Adjacent Lot 2", "BGI/26/112 - Category A"),
         ("Encumbrances", "None Registered"),
     ]
     
