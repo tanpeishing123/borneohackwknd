@@ -5,7 +5,7 @@ from fpdf import FPDF
 import datetime
 import qrcode
 import pytesseract
-from PIL import Image
+from PIL import Image, ImageFilter, ImageOps, ImageEnhance
 import io
 import base64
 import re
@@ -125,6 +125,81 @@ def init_database():
             source TEXT
         )
     ''')
+
+    # Seed deterministic EUDR demo entries used by pitch scenarios.
+    bangi_plot = {
+        "id": "P-BANGI-001",
+        "cropType": "Palm Oil",
+        "plantingYear": 2018,
+        "alias": "Bangi Demonstration Plot",
+        "landArea": 2.7,
+        "landTitleArea": 2.7,
+        "landTitleReference": "BGI-LOT-27/112",
+        "boundary": [
+            {"lat": 2.9178, "lng": 101.7848},
+            {"lat": 2.9180, "lng": 101.7861},
+            {"lat": 2.9192, "lng": 101.7863},
+            {"lat": 2.9194, "lng": 101.7851}
+        ],
+        "eudrChecked": True,
+        "eudrRiskScore": 11.2,
+        "eudrRiskLevel": "Low",
+        "eudrStatus": "safe"
+    }
+
+    lahad_datu_plot = {
+        "id": "P-LAHAD-001",
+        "cropType": "Palm Oil",
+        "plantingYear": 2024,
+        "alias": "Lahad Datu Expansion Plot",
+        "landArea": 3.4,
+        "landTitleArea": 3.4,
+        "landTitleReference": "LDU-LOT-88/205",
+        "boundary": [
+            {"lat": 5.0221, "lng": 118.3274},
+            {"lat": 5.0224, "lng": 118.3292},
+            {"lat": 5.0237, "lng": 118.3291},
+            {"lat": 5.0234, "lng": 118.3273}
+        ],
+        "eudrChecked": True,
+        "eudrRiskScore": 84.6,
+        "eudrRiskLevel": "High",
+        "eudrStatus": "unsafe"
+    }
+
+    cursor.execute('''
+        INSERT OR IGNORE INTO farmers
+        (id_number, name, permits, other_permit_name, permit_photo_url, plots, monthly_quota, current_total_sold, is_eudr_safe, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        '800101-10-1101',
+        'Bangi Demo Farmer',
+        json.dumps([{"type": "MPOB", "number": "MPOB-BGI-2026-0001"}]),
+        None,
+        None,
+        json.dumps([bangi_plot]),
+        4.05,
+        0,
+        1,
+        datetime.datetime.now().isoformat()
+    ))
+
+    cursor.execute('''
+        INSERT OR IGNORE INTO farmers
+        (id_number, name, permits, other_permit_name, permit_photo_url, plots, monthly_quota, current_total_sold, is_eudr_safe, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        '790404-12-2202',
+        'Lahad Datu Demo Farmer',
+        json.dumps([{"type": "MPOB", "number": "MPOB-LDU-2026-0002"}]),
+        None,
+        None,
+        json.dumps([lahad_datu_plot]),
+        5.1,
+        0,
+        0,
+        datetime.datetime.now().isoformat()
+    ))
     
     conn.commit()
     conn.close()
@@ -170,6 +245,7 @@ def get_user_profile(user_id: str):
 
 
 def _decode_base64_to_image(image_base64: str):
+    # _decode_base64_to_image - convert base64 uploads into a PIL image or PDF page.
     if ',' in image_base64:
         image_data = base64.b64decode(image_base64.split(',')[1])
     else:
@@ -192,10 +268,12 @@ def _decode_base64_to_image(image_base64: str):
 
 
 def _normalize_spaces(text: str):
+    # _normalize_spaces - collapse OCR whitespace before parsing labels and values.
     return re.sub(r'\s+', ' ', (text or '')).strip()
 
 
 def _clean_name(text: str):
+    # _clean_name - clean OCR text into a likely human name candidate.
     if not text:
         return None
     cleaned = _normalize_spaces(text)
@@ -208,6 +286,7 @@ def _clean_name(text: str):
 
 
 def _normalize_ic_number(text: str):
+    # _normalize_ic_number - normalize IC strings into a comparison-friendly format.
     if not text:
         return None
     digits = re.sub(r'\D', '', text)
@@ -217,6 +296,7 @@ def _normalize_ic_number(text: str):
 
 
 def _normalize_permit_number(text: str):
+    # _normalize_permit_number - normalize permit identifiers before matching.
     if not text:
         return None
     normalized = _normalize_spaces(text.upper())
@@ -226,7 +306,69 @@ def _normalize_permit_number(text: str):
     return normalized.strip('-')
 
 
+def _is_valid_owner_name(candidate: str) -> bool:
+    # _is_valid_owner_name - reject office names and labels before accepting an OCR owner.
+    """Check if a candidate string looks like a real human name and not a label."""
+    if not candidate:
+        return False
+    cleaned = _normalize_spaces(candidate).upper()
+    
+    # Reject if it's clearly a document label
+    label_markers = {
+        'IC NUMBER', 'NO IC', 'NO KAD', 'FULL NAME', 'NAME', 'NAMA',
+        'IDENTITY CARD', 'KAD PENGENALAN', 'MYKAD', 'KAD PENGENALAN MALAYSIA',
+        'OWNER', 'PEMILIK', 'LICENSEE', 'LICENCEE', 'HOLDER',
+        'NUMBER', 'NOMBOR', 'CARD', 'DOCUMENT', 'DATE OF BIRTH',
+        'DOB', 'TARIKH', 'ADDRESS', 'ALAMAT', 'NATIONALITY', 'WARGANEGARA',
+        'GENDER', 'JANTINA', 'ISSUE DATE', 'EXPIRY DATE', 'TERBIT',
+        'EXPIRED', 'TAMAT', 'TELEPHONE', 'MOBILE', 'TEL', 'NO TEL'
+    }
+    
+    # Reject if it's an institution/office/department name
+    institution_keywords = {
+        'PEJABAT', 'TANAH', 'GALIAN', 'NEGERI', 'SELANGOR', 'DEPARTMENT',
+        'MINISTRY', 'BOARD', 'AGENCY', 'OFFICE', 'KEMENTERIAN', 'LEMBAGA',
+        'BADAN', 'KANTOR', 'PERANGKAT', 'UNIT', 'BAHAGIAN', 'MALAYSIA',
+        'GOVERNMENT', 'FEDERAL', 'STATE', 'KERAJAAN', 'JOHOR', 'SABAH',
+        'SARAWAK', 'KEDAH', 'KELANTAN', 'PERAK', 'PERLIS', 'PAHANG',
+        'PULAU PINANG', 'SELANGOR', 'NEGERI SEMBILAN', 'MELAKA', 'KUALA LUMPUR'
+    }
+    
+    # If the whole candidate is a label, reject
+    if cleaned in label_markers:
+        return False
+    
+    # If candidate contains mostly label markers, reject
+    for marker in label_markers:
+        if marker in cleaned:
+            return False
+    
+    # Check for institution keywords
+    words_in_candidate = set(cleaned.split())
+    institution_overlap = words_in_candidate & institution_keywords
+    if len(institution_overlap) >= 2:  # If 2+ institution keywords, likely an office name
+        return False
+    
+    # Must have at least 2 words (first name + last name)
+    words = cleaned.split()
+    if len(words) < 2:
+        return False
+    
+    # Each word should be mostly letters (not numbers or special chars)
+    for word in words:
+        letter_count = sum(1 for c in word if c.isalpha())
+        if letter_count < len(word) * 0.7:  # At least 70% letters
+            return False
+    
+    # Minimum length check
+    if len(cleaned) < 6:  # e.g., "AB XY" is too short
+        return False
+    
+    return True
+
+
 def _find_name_candidate(ocr_text: str):
+    # _find_name_candidate - scan OCR lines for the most plausible personal name.
     def _looks_like_name_label_noise(candidate: str) -> bool:
         upper = _normalize_spaces(candidate).upper()
         noisy_markers = [
@@ -301,6 +443,7 @@ def _find_name_candidate(ocr_text: str):
 
 
 def _extract_ic_number(ocr_text: str):
+    # _extract_ic_number - locate the IC number using label-first OCR parsing.
     match = re.search(r'\b\d{6}-\d{2}-\d{4}\b', ocr_text)
     if match:
         return _normalize_ic_number(match.group(0))
@@ -311,6 +454,7 @@ def _extract_ic_number(ocr_text: str):
 
 
 def _extract_permit_area(ocr_text: str):
+    # _extract_permit_area - recover the licensed area from OCR text when present.
     """Extract registered/licensed area from permit document (in hectares)."""
     # Look for patterns like "2.50 hectares", "2.50 HA", "Area: 2.50", etc.
     # Allow flexible whitespace and newlines for PDF table layouts
@@ -332,22 +476,149 @@ def _extract_permit_area(ocr_text: str):
     return None
 
 
-def _extract_permit_number(ocr_text: str, permit_type: str):
-    ptype = (permit_type or '').upper()
-    patterns = []
+def _preprocess_image_for_ocr(image: Image.Image) -> Image.Image:
+    # _preprocess_image_for_ocr - improve contrast and sharpness before OCR runs.
+    """Apply gentle preprocessing to improve OCR accuracy: auto-orient,
+    convert to grayscale, increase contrast, denoise and threshold.
+    Returns a PIL Image suitable for pytesseract.
+    """
+    try:
+        img = image.convert('RGB')
+        img = ImageOps.exif_transpose(img)
+        gray = img.convert('L')
 
-    # Prefer extracting numbers that explicitly start with the selected permit type,
-    # e.g. MPOB-DLR-2026-002151.
+        # Increase contrast moderately
+        enhancer = ImageEnhance.Contrast(gray)
+        gray = enhancer.enhance(1.6)
+
+        # Median filter reduces salt-and-pepper noise
+        gray = gray.filter(ImageFilter.MedianFilter(size=3))
+
+        # Slight binarization helps on printed documents
+        threshold = 140
+        bw = gray.point(lambda x: 0 if x < threshold else 255, 'L')
+
+        return bw.convert('RGB')
+    except Exception:
+        return image
+
+
+def _extract_name_from_document_image(image: Image.Image):
+    # _extract_name_from_document_image - isolate the owner name using positional OCR.
+    """Attempt to extract the human name by looking for nearby words to common
+    labels such as 'Name', 'Nama', 'Owner', 'Licensee', etc., using
+    pytesseract image_to_data for positional context. Falls back to
+    _find_name_candidate on full OCR text. Uses _is_valid_owner_name to
+    strictly filter candidates.
+    """
+    try:
+        data = pytesseract.image_to_data(image, lang='eng', output_type=pytesseract.Output.DICT, config='--psm 6')
+        n = len(data.get('text', []))
+        labels = ['NAME', 'NAMA', 'OWNER', 'LICENSEE', 'LICENCEE', 'HOLDER', 'PEMILIK', 'NAMA PEMILIK']
+
+        for i in range(n):
+            txt = (data['text'][i] or '').strip()
+            if not txt:
+                continue
+            u = txt.upper()
+            for label in labels:
+                if label in u:
+                    top = data['top'][i]
+                    left = data['left'][i]
+                    height = data['height'][i] or 10
+
+                    # Prefer same-line, right-side candidates
+                    candidates = []
+                    for j in range(n):
+                        if j == i:
+                            continue
+                        t = (data['text'][j] or '').strip()
+                        if not t:
+                            continue
+                        # same visual line
+                        if abs(data['top'][j] - top) <= max(8, height // 2):
+                            if data['left'][j] > left:
+                                candidates.append((j, data['left'][j], int(data.get('conf', [])[j] if isinstance(data.get('conf', []), list) and data.get('conf', [])[j].isdigit() else -1)))
+
+                    # If no same-line right-side, look below label
+                    if not candidates:
+                        for j in range(n):
+                            if j == i:
+                                continue
+                            t = (data['text'][j] or '').strip()
+                            if not t:
+                                continue
+                            if data['top'][j] > top and (data['top'][j] - top) < 120:
+                                candidates.append((j, data['top'][j], int(data.get('conf', [])[j] if isinstance(data.get('conf', []), list) and data.get('conf', [])[j].isdigit() else -1)))
+
+                    if not candidates:
+                        continue
+
+                    # Sort candidates by horizontal position then confidence
+                    candidates_sorted = sorted(candidates, key=lambda x: (x[1], -x[2]))
+                    parts = []
+                    for idx_info in candidates_sorted[:8]:
+                        idx = idx_info[0]
+                        word = (data['text'][idx] or '').strip()
+                        if not word:
+                            continue
+                        # Skip tokens with digits (likely IDs or numbers)
+                        if re.search(r'\d', word):
+                            continue
+                        parts.append(word)
+                    if parts:
+                        candidate_name = ' '.join(parts)
+                        # Use strong validation before cleaning
+                        if _is_valid_owner_name(candidate_name):
+                            cleaned = _clean_name(candidate_name)
+                            if cleaned:
+                                return cleaned
+
+        # Fallback: run a gentle full-text OCR and use existing name candidate logic
+        ocr_text = pytesseract.image_to_string(image, lang='eng', config='--psm 6')
+        result = _find_name_candidate(ocr_text)
+        if result and _is_valid_owner_name(result):
+            return result
+        return None
+    except Exception:
+        try:
+            ocr_text = pytesseract.image_to_string(image, lang='eng')
+            result = _find_name_candidate(ocr_text)
+            if result and _is_valid_owner_name(result):
+                return result
+            return None
+        except Exception:
+            return None
+
+
+def _extract_permit_number(ocr_text: str, permit_type: str):
+    # _extract_permit_number - find the permit number with permit-specific label priority.
+    ptype = (permit_type or '').upper()
+    
+    # STEP 1: Look for explicit "License Number" or "Permit Number" labels first (most reliable)
+    label_patterns = [
+        r'(?:License\s*Number|Permit\s*Number|Nomor\s*Permit)\s*[:\-]?\s*([A-Z0-9\-]{5,40})',
+    ]
+    for pattern in label_patterns:
+        match = re.search(pattern, ocr_text, re.IGNORECASE)
+        if match:
+            candidate = match.group(1).strip()
+            normalized = _normalize_permit_number(candidate)
+            if normalized and len(normalized) >= 5:  # Valid permit number
+                return normalized
+    
+    # STEP 2: Fallback to permit-type-specific patterns if label not found
+    patterns = []
     if ptype:
         patterns.extend([
+            rf'\b{re.escape(ptype)}[-–—][A-Z0-9]{{2,12}}(?:[-–—]\d{{4}})?(?:[-–—]\d{{6}})?\b',
             rf'\b{re.escape(ptype)}(?:\s*[-–—]\s*[A-Z0-9]{{2,12}}){{1,5}}\b',
-            rf'\b{re.escape(ptype)}(?:\s*[-–—]\s*\d{{2,8}}){{1,5}}\b',
         ])
 
     # Generic fallback for uncommon license formats.
     patterns.extend([
+        r'\b[A-Z]{2,10}[-–—][A-Z0-9]{2,12}(?:[-–—]\d{4})?(?:[-–—]\d{6})?\b',
         r'\b[A-Z]{2,10}(?:\s*[-–—]\s*[A-Z0-9]{2,12}){1,5}\b',
-        r'\b[A-Z]{2,10}(?:\s*[-–—]\s*\d{2,8}){1,5}\b',
     ])
 
     for pattern in patterns:
@@ -357,7 +628,26 @@ def _extract_permit_number(ocr_text: str, permit_type: str):
     return None
 
 
+def _extract_permit_holder_name(ocr_text: str):
+    # _extract_permit_holder_name - extract the holder name without confusing issuer text.
+    """Extract permit/license holder name by looking for specific labels first."""
+    # Step 1: Look for explicit label-based extraction (most reliable)
+    label_patterns = [
+        r'(?:License\s+Holder|Permit\s+Holder|Licensee|Pemilik\s*Permit|Penerima|Pemegangan)\s*[:–—]?\s*([A-Za-z][A-Za-z\s\-\'\.]*?)(?:\n|$)',
+    ]
+    for pattern in label_patterns:
+        match = re.search(pattern, ocr_text, re.IGNORECASE)
+        if match:
+            candidate = match.group(1).strip()
+            candidate = re.sub(r'\s+', ' ', candidate)
+            if _is_valid_owner_name(candidate):
+                return candidate
+    
+    # Step 2: Fall back to positional/generic extraction
+    return None
+
 def extract_ic_data(image_base64: str):
+    # extract_ic_data - OCR the IC document and return identity fields for matching.
     """Extract name and Malaysian IC number from an IC image."""
     try:
         image = _decode_base64_to_image(image_base64)
@@ -394,12 +684,15 @@ def extract_ic_data(image_base64: str):
 
 
 def extract_permit_data(image_base64: str, permit_type: str):
+    # extract_permit_data - OCR a permit and return number, area, and holder metadata.
     """Extract permit number and registered area from permit image."""
     try:
         ocr_text = ''
         try:
             image = _decode_base64_to_image(image_base64)
-            ocr_text = pytesseract.image_to_string(image, lang='eng')
+            # Preprocess image to improve OCR accuracy
+            pre = _preprocess_image_for_ocr(image)
+            ocr_text = pytesseract.image_to_string(pre, lang='eng', config='--psm 6')
         except Exception as decode_err:
             # Fallback: try direct PDF text extraction if PIL image decode fails
             if not PDF_SUPPORT:
@@ -426,10 +719,17 @@ def extract_permit_data(image_base64: str, permit_type: str):
         permit_number = _extract_permit_number(ocr_text, ptype)
         registered_area = _extract_permit_area(ocr_text)
 
+        # Try to extract permit holder/owner name using label-based extraction
+        try:
+            owner_name = _extract_permit_holder_name(ocr_text)
+        except Exception:
+            owner_name = None
+
         return {
             'permitType': ptype,
             'permitNumber': permit_number,
             'registeredArea': registered_area,
+            'ownerName': owner_name,
             'raw_text': ocr_text,
             'confidence': {
                 'permitNumber': 0.0,
@@ -448,6 +748,7 @@ def extract_permit_data(image_base64: str, permit_type: str):
 
 
 def detect_document_type_match(raw_text: str, expected_type: str, permit_type: str = None):
+    # detect_document_type_match - validate the OCR result against the requested document class.
     """Heuristic document-type gate to reject wrong uploads before auto-fill."""
     text = (raw_text or '')
     upper = text.upper()
@@ -558,6 +859,7 @@ def detect_document_type_match(raw_text: str, expected_type: str, permit_type: s
 
 
 def extract_land_title_data(image_base64: str):
+    # extract_land_title_data - OCR land titles for owner, lot, area, and geocoding hints.
     """
     使用 Tesseract OCR 从地契图像提取关键字段
     """
@@ -588,7 +890,9 @@ def extract_land_title_data(image_base64: str):
             except Exception as e:
                 return {'error': f'Invalid image format: {str(e)}'}
         
-        ocr_text = pytesseract.image_to_string(image, lang='eng')
+        # Preprocess image to improve OCR accuracy for land title
+        pre = _preprocess_image_for_ocr(image)
+        ocr_text = pytesseract.image_to_string(pre, lang='eng', config='--psm 6')
         data = {
             'lot_number': None,
             'plot_alias': None,
@@ -635,9 +939,33 @@ def extract_land_title_data(image_base64: str):
                 data['land_area'] = float(area_match.group(1))
             except ValueError:
                 pass
-        owner_match = re.search(r'(?:\()?(?:Owner|OWNER)\s*(?:Name)?\s*:?\s*([A-Za-z\s]+?)(?:\n|,|\)|$)', ocr_text, re.IGNORECASE)
+        owner_match = re.search(r'(?:Owner|OWNER|Pemilik|PEMILIK)\s*(?:Name|Nama)?\s*[:\-]?\s*([A-Za-z\s\-\'\.]{5,120})(?:\n|$)', ocr_text, re.IGNORECASE | re.MULTILINE)
         if owner_match:
-            data['owner_name'] = owner_match.group(1).strip()
+            candidate = owner_match.group(1).strip()
+            # Clean up trailing junk (like extra spaces or formatting)
+            candidate = re.sub(r'\s+', ' ', candidate)
+            if _is_valid_owner_name(candidate):
+                data['owner_name'] = candidate
+
+        # Try positional name extraction from the preprocessed image for higher accuracy
+        try:
+            if not data['owner_name']:
+                owner_name_pos = _extract_name_from_document_image(pre)
+                if owner_name_pos and _is_valid_owner_name(owner_name_pos):
+                    data['owner_name'] = owner_name_pos
+            else:
+                # Double-check that regex-extracted name is still valid
+                owner_name_pos = _extract_name_from_document_image(pre)
+                if owner_name_pos and _is_valid_owner_name(owner_name_pos):
+                    # Prefer positional if different (positional is more accurate)
+                    if owner_name_pos.upper() != data['owner_name'].upper():
+                        data['owner_name'] = owner_name_pos
+        except Exception:
+            # If positional fails, keep the regex result if valid
+            if not data['owner_name']:
+                fallback = _find_name_candidate(ocr_text)
+                if fallback and _is_valid_owner_name(fallback):
+                    data['owner_name'] = fallback
 
         lat_match = re.search(r'(?:Lat|Latitude)\s*:?\s*(-?\d+(?:\.\d+)?)', ocr_text, re.IGNORECASE)
         lng_match = re.search(r'(?:Lng|Lon|Longitude)\s*:?\s*(-?\d+(?:\.\d+)?)', ocr_text, re.IGNORECASE)
@@ -654,11 +982,13 @@ def extract_land_title_data(image_base64: str):
 
 
 def calculate_quota(area: float, unit: str):
+    # calculate_quota - convert declared land area into the quota used by the demo rules.
     actual_ha = area * 0.4047 if unit == 'Acre' else area
     return round(actual_ha * 1.5, 2)
 
 
 def _parse_plot_crops(plot: dict):
+    # _parse_plot_crops - normalize plot crop labels into a stable list for validation.
     # Prefer structured cropTypes when provided by frontend.
     crop_types = plot.get('cropTypes') or []
     if isinstance(crop_types, list) and crop_types:
@@ -685,6 +1015,7 @@ def _parse_plot_crops(plot: dict):
 
 
 def _tokenize(text: str):
+    # _tokenize - split text into searchable tokens for permit and crop matching.
     stop = {
         'permit', 'license', 'licence', 'registration', 'certificate', 'board',
         'smallholder', 'holder', 'farm', 'plot', 'type', 'other'
@@ -694,6 +1025,7 @@ def _tokenize(text: str):
 
 
 def _other_crop_supported(other_crop: str, other_permit_names: list[str]):
+    # _other_crop_supported - confirm that an Other crop is backed by a matching custom permit.
     crop_tokens = _tokenize(other_crop)
     if not crop_tokens:
         return False
@@ -705,6 +1037,7 @@ def _other_crop_supported(other_crop: str, other_permit_names: list[str]):
 
 
 def _validate_land_title_area_cap(farmer_data: dict):
+    # _validate_land_title_area_cap - ensure plot areas stay within the land title boundary.
     """
     按 land title 分组，检查同一 land title 上的所有 plots 的 license area 总和
     是否超过 land title 的总面积。如果超过，返回 False 和错误信息。
@@ -753,6 +1086,7 @@ def _validate_land_title_area_cap(farmer_data: dict):
 
 
 def _validate_farmer_crop_permit_alignment(farmer_data: dict):
+    # _validate_farmer_crop_permit_alignment - block crop registrations that do not match an uploaded permit.
     permit_entries = farmer_data.get('permits', []) or []
 
     standard_permits = {
@@ -808,6 +1142,7 @@ def _validate_farmer_crop_permit_alignment(farmer_data: dict):
 
 # --- Farmer Registration ---
 def process_farmer_registration(farmer_data: dict):
+    # process_farmer_registration - run the full farmer onboarding and quota calculation flow.
     try:
         # 1. 检查作物与执照的对齐
         valid, msg = _validate_farmer_crop_permit_alignment(farmer_data)
@@ -881,6 +1216,7 @@ def add_plot_to_farmer(farmer_id: str, plot_data: dict):
 
 # --- Dealer Registration ---
 def process_dealer_registration(dealer_data: dict):
+    # process_dealer_registration - persist dealer station identity, location, and license records.
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -921,6 +1257,7 @@ def process_dealer_registration(dealer_data: dict):
 
 # --- Check Security Filters ---
 def check_security_filters(tx_data: dict):
+    # check_security_filters - enforce the anti-laundering quota gate before transaction approval.
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -975,6 +1312,7 @@ def check_security_filters(tx_data: dict):
 
 # --- Generate Compliance Report ---
 def generate_compliance_report(tx_data: dict, security_result: dict):
+    # generate_compliance_report - build the PDF evidence report for a verified transaction.
     pdf = FPDF()
     pdf.add_page()
     
@@ -1021,6 +1359,7 @@ def generate_compliance_report(tx_data: dict, security_result: dict):
 from io import BytesIO
 
 def generate_farmer_qr_logic(farmer_id: str):
+    # generate_farmer_qr_logic - create the QR payload that links a farmer to the traceability flow.
     qr_content = f"PALM_FARMER:{farmer_id}"
     
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
@@ -1039,6 +1378,7 @@ from shapely.geometry import Point, Polygon
 
 # --- Get Farmer Status ---
 def get_farmer_status_logic(farmer_id: str):
+    # get_farmer_status_logic - load farmer status, permits, and plot data for dashboard verification.
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1070,6 +1410,7 @@ def get_farmer_status_logic(farmer_id: str):
 
 # --- Resolve Land Title Location (Geolocation) ---
 def resolve_land_title_location(lot_number: str, mukim: str, district: str, state: str):
+    # resolve_land_title_location - geocode land title metadata into ranked location candidates.
     """
     调用 Nominatim (OpenStreetMap) 获取地块位置坐标
     策略优化：优先使用 District 级查询（Nominatim 识别度最高），返回评分最高的候选点
@@ -1186,6 +1527,7 @@ def resolve_land_title_location(lot_number: str, mukim: str, district: str, stat
 
 # --- Verify Spatial Compliance ---
 def verify_spatial_compliance(current_lat: float, current_lng: float, boundary_points: list):
+    # verify_spatial_compliance - test whether a point falls inside the registered geofence boundary.
     if not boundary_points or len(boundary_points) < 3:
         return {"status": "NEED_STAGE_2", "message": "No boundary data! Please complete Stage 2: Add Plot first."}
 
@@ -1198,6 +1540,7 @@ def verify_spatial_compliance(current_lat: float, current_lng: float, boundary_p
 
 # --- Generate Consolidated Report ---
 def generate_consolidated_report(manifest_data: dict):
+    # generate_consolidated_report - build the dealer manifest PDF from a batch of transactions.
     pdf = FPDF()
     pdf.add_page()
     
@@ -1256,6 +1599,7 @@ def generate_consolidated_report(manifest_data: dict):
 
 # --- Save Transaction ---
 def save_transaction(tx_data: dict):
+    # save_transaction - persist a transaction record for later audit and sync.
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1297,6 +1641,7 @@ def save_transaction(tx_data: dict):
 
 
 def get_all_transactions():
+    # get_all_transactions - return the complete transaction ledger for the dashboard.
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1343,6 +1688,7 @@ def get_all_transactions():
 
 
 def get_transactions_by_farmer(farmer_id: str):
+    # get_transactions_by_farmer - filter the transaction ledger to one farmer ID.
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1391,6 +1737,7 @@ def get_transactions_by_farmer(farmer_id: str):
 
 
 def clear_transactions_by_farmer(farmer_id: str):
+    # clear_transactions_by_farmer - delete one farmer's transactions after sync or reset.
     """Clear all transactions for a farmer (demo reset flow)."""
     try:
         conn = get_db_connection()
@@ -1412,6 +1759,7 @@ def clear_transactions_by_farmer(farmer_id: str):
 
 # --- Request Transaction Audit ---
 def request_transaction_audit(transaction_id: str, requested_by: str = "dealer"):
+    # request_transaction_audit - flag a transaction for manual review when risk is detected.
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1446,6 +1794,7 @@ def request_transaction_audit(transaction_id: str, requested_by: str = "dealer")
 
 # --- Sync Transactions ---
 def sync_transactions(sync_payload: dict):
+    # sync_transactions - import offline transaction batches into the live ledger.
     try:
         transactions = sync_payload.get('transactions', [])
         if not isinstance(transactions, list):
@@ -1474,6 +1823,7 @@ def sync_transactions(sync_payload: dict):
 
 # --- EUDR Deforestation Check ---
 def check_eudr_deforestation(boundary_coords: list, upload_date_str: str, plot_id: str = None):
+    # check_eudr_deforestation - compare historical NDVI against current imagery for deforestation risk.
     """
     Check EUDR deforestation risk by comparing 2020-12-31 vegetation vs upload date.
     
