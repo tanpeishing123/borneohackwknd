@@ -5,6 +5,8 @@ Veri is an AI- and GIS-powered multi-commodity compliance ecosystem designed to 
 ## 📝Project Overview
 Veri automates the entire compliance workflow—from farmer identity verification to proactive fraud interception and Due Diligence Statement (DDS) generation. It ensures that every batch of commodities (Palm Oil, Cocoa, Rubber) entering the supply chain is verified for "Zero Deforestation" and "Legal Production."
 
+## Case Study 8 : AI for Inclusive MSME Growth​
+
 ## 🌍SDGs Addressed
 __🏛️ SDG 9: Industry, Innovation, and Infrastructure__
 
@@ -21,6 +23,10 @@ __🏛️ SDG 9: Industry, Innovation, and Infrastructure__
 
 - __Millers & Exporters:__ To automatically generate EU-compliant DDS reports.
 ****
+
+## Resource
+### 🚀 pitch deck link :
+https://1drv.ms/p/c/10f59dacdbd8fa30/IQBc2DPwnM_ITJTRXPbiovTwAYaDOATRL-Vp0OrAX259hzA?e=5pm0aj
 
 ## 🛠️ Prerequisites
 
@@ -152,18 +158,6 @@ Before running the application, verify:
 - SQLite is the active database engine for local demo and testing
 - The database file is `src/backend/veri_demo.db`
 - Resetting the app data means deleting that SQLite file and restarting the backend
-
----
-
-## Resource
-### 🚀 Live Demo & Testing Guide
-
-**[👉 Click to View Live Prototype](https://borneohackwknd.vercel.app)**
-
-#### ⚡ Note for Judges
-* **Server Wake-up:** Our backend is hosted on Render (Free Tier). If the site has been inactive, the first request may take **30-60 seconds** to wake up. We appreciate your patience!
-* **Demo Assets:** To ensure 100% accuracy with our **Dockerized Tesseract OCR**, please use the images provided in our **[Demo IC Samples](./demo_assets)**. These match the document types our AI is optimized for.
-
 ---
 
 #### 🔄 Full Testing Loop
@@ -198,22 +192,12 @@ To ensure the best experience and to unlock all demo features __please use the f
 - __Result__: The __Name__ and __IC Number__ will be automatically extracted and filled via __Pytesseract__.
 
 __Step 2: Multi-Plot Geofencing (GIS Logic)__
-Veri offers two distinct methods to register and verify plantation boundaries, ensuring both user convenience and data integrity.
-__Method A: Auto-detect (Evidence-Based Position)__
+Veri  register and verify plantation boundaries, ensuring both user convenience and data integrity.
+__Auto-detect (Evidence-Based Position)__
 1. Navigate to the Plot Registration page.
 2. Click the "__Auto-detect__" button located at the bottom left of the map interface.
 3. __Mechanism__: The system uses AI to parse the uploaded "Land Title Evidence." It extracts official GPS coordinates or location markers directly from the legal document.
 4. __Verification__: A "Location Confirmation" modal will appear , displaying the extracted address and coordinates with an "__Official Verified__" badge.
-5. Click "__Confirm Location__" to automatically center the map and pin the verified site.
-
-__Method B: Draw Polygon (Manual Boundary & Anti-Fraud)__
-1. Click the "__Draw Polygon__" button on the right side of the map interface.
-2. Use your mouse/touchscreen to draw the physical boundaries of the plantation on the interactive map.
-3. __Validation Logic__: Once the polygon is closed, the Shapely engine calculates the actual physical area in Hectares (HA).
-4. __Test Case (Area Discrepancy Fraud)__:
-- __Action__: Set the "Land Area" field to 2.5 HA, but draw a polygon that covers a much larger area (e.g., covering an entire neighborhood).
-- __Expected Result__: The Real-time Area Compliance widget will instantly display a red warning (e.g., "Difference: 59.6%").
-- __Safety Lock__: The "Save Plot" button will be disabled/locked, preventing the registration of fraudulent acreage which could be used for "crop laundering."
 
 __Step 3:  Dealer Onboarding (Station Registration)__
 Before collection operators can begin scanning crops, they must verify their identity and secure their station's credentials. This is a crucial step to ensure the integrity of the supply chain.
@@ -272,4 +256,4 @@ This final step demonstrates how Veri prepares bulk shipments for mills while ma
 - __Final Output__: The system generates a professional Batch Manifest Certificate.
 - __Evidence__: This report features a "Negligible Risk" audit result, a unique Manifest ID, and a Consolidated Traceability Matrix that lists every verified source plot, ready for EU regulatory submission.
 
-**Built for Borneo Hackathon 2026** 🌴
+**Built for BorNEO HackWknd 2026** 🌴
